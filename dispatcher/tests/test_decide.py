@@ -8,6 +8,7 @@ from dispatcher.models import (
     FinishTask,
     Item,
     PauseConversation,
+    ReleaseOrphan,
     StartTask,
 )
 from dispatcher.state import State
@@ -57,7 +58,7 @@ def test_fix_uses_the_dev_engine(cfg):
 
 def test_working_or_needs_human_items_are_not_started_by_labels(cfg):
     items = [issue(1, "agent:dev", "agent:working"), issue(2, "agent:dev", "needs:human")]
-    assert decide(items, [], {}, State(), cfg, NOW) == []
+    assert starts(decide(items, [], {}, State(), cfg, NOW)) == []
 
 
 def test_one_task_per_engine(cfg):
@@ -133,3 +134,22 @@ def test_item_with_active_task_is_not_restarted_by_comment(cfg):
     st = state_with(active(1, engine="claude"))
     c = Comment(83, "qr", 1, "maxiar", "@openhands otra cosa")
     assert starts(decide([issue(1)], [c], {"c1": ConvInfo("c1", "running")}, st, cfg, NOW)) == []
+
+
+@pytest.mark.parametrize("status", ["waiting_for_confirmation", "paused"])
+def test_stalled_statuses_finish_after_grace_period(cfg, status):
+    young = active(1, started=NOW - 30)
+    old = active(2, started=NOW - cfg.idle_grace_seconds, conv="c2", engine="claude")
+    convs = {"c1": ConvInfo("c1", status), "c2": ConvInfo("c2", status)}
+    assert decide([], [], convs, state_with(young, old), cfg, NOW) == [FinishTask(old, status, convs["c2"])]
+
+
+def test_working_label_without_active_task_is_released(cfg):
+    orphan = issue(1, "agent:working")
+    assert decide([orphan], [], {}, State(), cfg, NOW) == [ReleaseOrphan(orphan)]
+
+
+def test_working_label_with_active_task_is_kept(cfg):
+    st = state_with(active(1))
+    actions = decide([issue(1, "agent:working")], [], {"c1": ConvInfo("c1", "running")}, st, cfg, NOW)
+    assert actions == []

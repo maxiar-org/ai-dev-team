@@ -116,3 +116,36 @@ def test_timeout_pauses_and_escalates(tmp_path, cfg):
     assert cv.paused == ["conv1"]
     assert "needs:human" in gh.labels(3)
     assert "timeout" in gh.posted[-1][1]
+
+
+def test_github_failure_while_finishing_frees_the_engine(tmp_path, cfg):
+    d, gh, cv, ws, clock = make(tmp_path, cfg)
+    gh.add_item(Item(REPO, 7, "pr", "WA", "", frozenset({"agent:review", "engine:codex"}), "agent/3-wa"))
+    d.run_once()
+    cv.status["conv1"] = "finished"
+    cv.responses["conv1"] = "VEREDICTO: APROBADO"
+    gh.fail_request_review = True
+    d.run_once()
+    assert StateStore(cfg.state_path).load().active == {}
+    assert len(MetricsLog(cfg.metrics_path).read()) == 1
+    assert "needs:human" in gh.labels(7)
+
+
+def test_final_response_is_redacted_before_posting(tmp_path, cfg):
+    d, gh, cv, ws, clock = make(tmp_path, cfg)
+    gh.add_item(Item(REPO, 3, "issue", "T", "", frozenset({"agent:dev"})))
+    d.run_once()
+    cv.status["conv1"] = "finished"
+    cv.responses["conv1"] = "remote: https://x-access-token:ghp_test@github.com/x.git\nGH_TOKEN=ghp_test"
+    d.run_once()
+    body = gh.posted[-1][1]
+    assert "ghp_test" not in body and "x-access-token:" not in body
+
+
+def test_orphan_working_label_is_released(tmp_path, cfg):
+    d, gh, cv, ws, clock = make(tmp_path, cfg)
+    gh.add_item(Item(REPO, 3, "issue", "T", "", frozenset({"agent:working"})))
+    d.run_once()
+    assert gh.labels(3) == {"needs:human"}
+    assert "agent:working" in gh.posted[0][1]
+    assert cv.created == []

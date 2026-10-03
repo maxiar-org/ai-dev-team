@@ -18,6 +18,7 @@ from .models import (
     FinishTask,
     Item,
     PauseConversation,
+    ReleaseOrphan,
     StartTask,
     engine_from_labels,
     item_key,
@@ -26,6 +27,8 @@ from .models import (
 from .state import State
 
 DONE_STATUSES = frozenset({"finished", "error", "stuck"})
+# Estados que solo cuentan como terminados después del período de gracia.
+STALL_STATUSES = frozenset({"idle", "waiting_for_confirmation", "paused"})
 
 
 def decide(
@@ -45,7 +48,7 @@ def decide(
         if conv is None:
             actions.append(FinishTask(task, "missing", None))
         elif conv.status in DONE_STATUSES or (
-            conv.status == "idle" and elapsed >= cfg.idle_grace_seconds
+            conv.status in STALL_STATUSES and elapsed >= cfg.idle_grace_seconds
         ):
             actions.append(FinishTask(task, conv.status, conv))
         elif elapsed >= cfg.task_timeout_min * 60:
@@ -56,6 +59,10 @@ def decide(
     busy_engines = {t.engine for t in state.active.values()}
     busy_items = {t.key for t in state.active.values()}
     started_items: set[str] = set()
+    for item in items:
+        if LABEL_WORKING in item.labels and item.key not in busy_items:
+            actions.append(ReleaseOrphan(item))
+            started_items.add(item.key)
     candidates = [*_comment_candidates(items, comments, state, cfg), *_label_candidates(items, cfg)]
     for candidate in candidates:
         key = candidate.item.key

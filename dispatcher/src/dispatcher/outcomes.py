@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 from .models import (
+    LABEL_DEV,
     LABEL_FIX,
     LABEL_HUMAN,
     LABEL_REVIEW,
@@ -23,6 +24,7 @@ from .models import (
 VERDICT_RE = re.compile(r"VEREDICTO:\s*\**\s*(APROBADO|CAMBIOS)", re.IGNORECASE)
 SNIPPET_CHARS = 1500
 NORMAL_STATUSES = frozenset({"finished", "idle"})
+TRIGGER_LABELS = {"dev": LABEL_DEV, "review": LABEL_REVIEW, "fix": LABEL_FIX}
 
 
 @dataclass(frozen=True)
@@ -69,7 +71,8 @@ def outcome_for(
     max_rounds: int,
 ) -> Outcome:
     n = task.number
-    ops: list[GitHubOp] = [RemoveLabel(n, LABEL_WORKING)]
+    # El label disparador se quita siempre: si quedara, la tarea se repetiría en bucle.
+    ops: list[GitHubOp] = [RemoveLabel(n, LABEL_WORKING), RemoveLabel(n, TRIGGER_LABELS[task.role])]
 
     def escalate(result: str, message: str, new_rounds: int = rounds) -> Outcome:
         ops.extend([AddLabels(n, (LABEL_HUMAN,)), PostComment(n, message)])

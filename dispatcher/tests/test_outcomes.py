@@ -15,12 +15,16 @@ def pr_item(number=7, head="agent/3-whatsapp", body=""):
 def test_dev_with_pr_sends_it_to_review():
     out = outcome_for(task(), "finished", "listo", frozenset({"agent:working"}), pr_item(), 0, 2)
     assert out.result == "pr_abierto"
-    assert out.ops == (RemoveLabel(3, "agent:working"), AddLabels(7, ("agent:review", "engine:codex")))
+    assert out.ops == (
+        RemoveLabel(3, "agent:working"),
+        RemoveLabel(3, "agent:dev"),
+        AddLabels(7, ("agent:review", "engine:codex")),
+    )
 
 
 def test_dev_that_asked_for_help_only_clears_working():
     out = outcome_for(task(), "finished", "", frozenset({"needs:human"}), None, 0, 2)
-    assert (out.result, out.ops) == ("needs_human", (RemoveLabel(3, "agent:working"),))
+    assert (out.result, out.ops) == ("needs_human", (RemoveLabel(3, "agent:working"), RemoveLabel(3, "agent:dev")))
 
 
 def test_dev_without_pr_or_question_escalates_with_last_answer():
@@ -87,7 +91,7 @@ def test_fix_from_comment_asks_eduardo_again():
 
 def test_fix_that_asked_for_help_stops():
     out = outcome_for(task("fix", "pr", 7), "finished", "", frozenset({"needs:human"}), None, 1, 2)
-    assert (out.result, out.ops) == ("needs_human", (RemoveLabel(7, "agent:working"),))
+    assert (out.result, out.ops) == ("needs_human", (RemoveLabel(7, "agent:working"), RemoveLabel(7, "agent:fix")))
 
 
 def test_find_pr_by_branch_or_closes_and_not_by_similar_number():
@@ -99,3 +103,13 @@ def test_find_pr_by_branch_or_closes_and_not_by_similar_number():
     assert find_pr_for_issue(items, "qr", 3).number == 11
     assert find_pr_for_issue(items, "qr", 30).number == 10
     assert find_pr_for_issue(items, "otro", 3) is None
+
+
+@pytest.mark.parametrize("status", ["finished", "error"])
+@pytest.mark.parametrize(
+    "role,kind,trigger_label",
+    [("dev", "issue", "agent:dev"), ("review", "pr", "agent:review"), ("fix", "pr", "agent:fix")],
+)
+def test_trigger_label_is_always_removed(role, kind, trigger_label, status):
+    out = outcome_for(task(role, kind, 7), status, "VEREDICTO: APROBADO", frozenset(), None, 0, 2)
+    assert RemoveLabel(7, trigger_label) in out.ops

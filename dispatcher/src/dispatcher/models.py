@@ -111,7 +111,14 @@ class PauseConversation:
     conversation_id: str
 
 
-Action = Union[StartTask, FinishTask, PauseConversation]
+@dataclass(frozen=True)
+class ReleaseOrphan:
+    """Un item tiene agent:working pero no hay una tarea activa que lo respalde."""
+
+    item: Item
+
+
+Action = Union[StartTask, FinishTask, PauseConversation, ReleaseOrphan]
 
 
 # Operaciones sobre GitHub que outcome_for() pide ejecutar (siempre en el repo de la tarea).

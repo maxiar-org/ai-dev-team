@@ -4,7 +4,19 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections.abc import Iterable
 from pathlib import Path
+
+
+CREDENTIALS_RE = re.compile(r"[^/\s:@]+:[^/\s@]+@")
+
+
+def redact(text: str, secrets: Iterable[str]) -> str:
+    """Oculta los secretos dados y cualquier usuario:token@ embebido en una URL."""
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "<oculto>")
+    return CREDENTIALS_RE.sub("<credenciales>@", text)
 
 
 class WorkspaceError(RuntimeError):
@@ -33,10 +45,8 @@ class Workspace:
         return self.projects_dir / repo / f"{kind}-{number}"
 
     def _redact(self, text: str) -> str:
-        # git a veces imprime el remoto sin esquema; y nunca debe salir un usuario:token@.
-        for secret in (self.remote_base, self.remote_base.split("://", 1)[-1]):
-            text = text.replace(secret, "<remoto>")
-        return re.sub(r"[^/\s:@]+:[^/\s@]+@", "<credenciales>@", text)
+        # git a veces imprime el remoto sin esquema.
+        return redact(text, (self.remote_base, self.remote_base.split("://", 1)[-1]))
 
     def _git(self, *args: str, cwd: Path | None = None) -> str:
         try:

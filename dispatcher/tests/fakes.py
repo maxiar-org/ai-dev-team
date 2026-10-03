@@ -23,6 +23,7 @@ class FakeGitHub:
         self.posted: list[tuple[int, str]] = []
         self.review_requests: list[tuple[int, tuple[str, ...]]] = []
         self.fail_add_labels_for: set[int] = set()
+        self.fail_request_review = False
         self.calls = calls if calls is not None else []
 
     def add_item(self, item: Item) -> None:
@@ -56,6 +57,8 @@ class FakeGitHub:
         self.posted.append((number, body))
 
     def request_review(self, repo, number, reviewers):
+        if self.fail_request_review:
+            raise RuntimeError("422: el usuario no es colaborador")
         self.review_requests.append((number, tuple(reviewers)))
 
 

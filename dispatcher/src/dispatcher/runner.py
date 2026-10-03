@@ -24,6 +24,7 @@ from .models import (
     Item,
     PauseConversation,
     PostComment,
+    ReleaseOrphan,
     RemoveLabel,
     RequestReview,
     StartTask,
@@ -31,7 +32,7 @@ from .models import (
 from .outcomes import find_pr_for_issue, outcome_for
 from .prompts import build_prompt
 from .state import State, StateStore
-from .workspace import WorkspaceError
+from .workspace import WorkspaceError, redact
 
 log = logging.getLogger("dispatcher")
 
@@ -80,6 +81,18 @@ class Dispatcher:
             self._start(action, state, now)
         elif isinstance(action, FinishTask):
             self._finish(action, state, items, now)
+        elif isinstance(action, ReleaseOrphan):
+            self._release_orphan(action.item)
+
+    def _release_orphan(self, item: Item) -> None:
+        self.github.remove_label(item.repo, item.number, LABEL_WORKING)
+        self.github.add_labels(item.repo, item.number, [LABEL_HUMAN])
+        self.github.comment(
+            item.repo, item.number,
+            "⚠️ Este item tenía `agent:working` pero el dispatcher no tiene una tarea activa para él "
+            "(posible reinicio o estado perdido). Revisa Canvas por si quedó una conversación "
+            "huérfana y vuelve a poner el label disparador o comenta con @openhands.",
+        )
 
     def _start(self, a: StartTask, state: State, now: float) -> None:
         item = a.item
@@ -128,14 +141,36 @@ class Dispatcher:
                 final = self.canvas.final_response(task.conversation_id)
             except Exception:
                 log.warning("No pude leer la respuesta final de %s", task.conversation_id)
-        labels = self.github.get_labels(task.repo, task.number)
+        # La respuesta del agente puede terminar en un comentario público: nunca con el token.
+        final = redact(final, (self.cfg.github_token,))
+        try:
+            labels = self.github.get_labels(task.repo, task.number)
+        except Exception:
+            log.warning("No pude leer los labels de %s", task.key)
+            labels = frozenset()
         pr = find_pr_for_issue(items, task.repo, task.number) if task.kind == "issue" else None
         outcome = outcome_for(
             task, a.status, final, labels, pr,
             state.review_rounds.get(task.key, 0), self.cfg.max_review_rounds,
         )
+        failed = []
         for op in outcome.ops:
-            self._apply_op(task.repo, op)
+            try:
+                self._apply_op(task.repo, op)
+            except Exception as exc:
+                log.warning("Falló %s en %s: %s", type(op).__name__, task.key, exc)
+                failed.append(type(op).__name__)
+        if failed:
+            try:
+                self.github.add_labels(task.repo, task.number, [LABEL_HUMAN])
+                self.github.comment(
+                    task.repo, task.number,
+                    f"⚠️ La tarea `{task.role}` terminó (`{outcome.result}`), pero fallaron estas "
+                    f"operaciones en GitHub: {', '.join(failed)}. Revisa el estado a mano.",
+                )
+            except Exception:
+                log.exception("Tampoco pude escalar %s", task.key)
+        # Siempre se libera la tarea: si no, su motor queda bloqueado para siempre.
         state.review_rounds[task.key] = outcome.review_rounds
         self.metrics.append(task, a.status, outcome.result, a.conv, now)
         state.active.pop(task.key, None)
