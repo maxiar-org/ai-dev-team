@@ -156,7 +156,7 @@ La plantilla `agent-task.md` incluye el campo **Entregable visible**: qué podr�
 
 ### Labels
 
-`agent:dev`, `agent:working` (lo pone el dispatcher mientras hay una conversación activa), `agent:review`, `needs:human`, `engine:claude`, `engine:codex`. Se definen en `ai-dev-team/github/labels.yml` y se sincronizan con `gh label` a cada proyecto.
+`agent:dev`, `agent:working` (lo pone el dispatcher mientras hay una conversación activa), `agent:review`, `agent:fix` (lo pone el dispatcher cuando el reviewer pide cambios), `needs:human`, `engine:claude`, `engine:codex`. Se definen en `ai-dev-team/github/labels.yml` y se sincronizan con `gh label` a cada proyecto.
 
 ## 5. Métricas y manejo de errores
 
