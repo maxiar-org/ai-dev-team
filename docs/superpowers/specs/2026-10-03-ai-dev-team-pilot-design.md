@@ -38,7 +38,7 @@ No hay plazo fijo: se busca un resultado rápido sobre si la idea es viable.
 |---|---|---|
 | Framework | **OpenHands Agent Canvas**, self-hosted | El más maduro y pensado para Docker (≈90k⭐, MIT). Descartados: MetaGPT y ChatDev (solo API keys, poco mantenidos), CrewAI y LangGraph (habría que construir todo), Paperclip (integración con GitHub sin verificar). |
 | Acceso a modelos | **Opción C:** Claude y Codex vía ACP usando las suscripciones | **Riesgo aceptado conscientemente:** `claude-agent-acp` está construido sobre el Claude Agent SDK, y los términos de Anthropic exigen API key en ese caso. Para mitigarlo se usa una **cuenta Claude Pro aparte**, nunca la cuenta Max de trabajo con clientes, y el uso será moderado. Plan B: el "modo híbrido", con Codex en OpenHands y Claude vía `claude-code-action` (el CLI oficial). |
-| Conexión con GitHub | **Enfoque 1:** automatizaciones nativas de Agent Canvas | Si no están disponibles en la versión open source, se pasa al **enfoque 2:** un despachador mínimo propio. El enfoque 3 (resolver vía Actions) se descartó porque usa API keys. |
+| Conexión con GitHub | **Enfoque 2:** un **dispatcher** propio mínimo que consulta GitHub periódicamente y crea conversaciones por la API REST de Canvas | El enfoque 1 (automatizaciones nativas) quedó descartado: en la versión self-hosted de Canvas los disparadores por eventos de GitHub son solo de OpenHands Cloud (necesitan su GitHub App y un webhook), y lo único disponible es cron ([docs](https://docs.openhands.dev/automations/event-automations)). Un cron que despierte a un agente para revisar issues gastaría cuota sin hacer nada. El enfoque 3 (resolver vía Actions) se descartó porque usa API keys. |
 | Organización en GitHub | `maxiar-org` | Separada del trabajo con clientes. |
 | Identidad de los agentes | Cuenta bot **`maxiar-ai-dev-team-bot`** | Distingue el trabajo de los agentes, y solo Eduardo aprueba y mergea. |
 | Roles del piloto | **Dev** (con TDD, cubre también el testing) y **Reviewer** | Mínimo viable; el resto de los roles es para la fase 2. |
@@ -52,7 +52,9 @@ No hay plazo fijo: se busca un resultado rápido sobre si la idea es viable.
   - `docker-compose.yml`, `.env.example` (el `.env` real no se versiona)
   - `roles/dev.md`, `roles/reviewer.md`: instrucciones de cada rol
   - `github/labels.yml`, `github/ISSUE_TEMPLATE/agent-task.md`: se sincronizan a cada proyecto
-  - `pilot/collect-metrics`, `pilot/healthcheck`, `pilot/metrics.csv`, `pilot/REPORT.md`
+  - `canvas/Dockerfile`: imagen de Canvas con Flutter y `gh` preinstalados
+  - `dispatcher/`: servicio Python que conecta GitHub con Canvas (con tests)
+  - `pilot/metrics.csv` (generado por el dispatcher), `pilot/REPORT.md`
   - `docs/`: specs, planes y bitácora
 - **`qr-generator`:** proyecto piloto en Flutter, con `AGENTS.md` (convenciones), CI en GitHub Actions y backlog en issues.
 
@@ -60,25 +62,45 @@ No hay plazo fijo: se busca un resultado rápido sobre si la idea es viable.
 
 ```
 docker compose (ai-dev-team)
-├─ agent-canvas    → UI web + Agent Server (ghcr.io/openhands/agent-canvas)
-│                    lanza agentes vía ACP:
-│                    ├─ claude-agent-acp  (cuenta Claude Pro del piloto)
-│                    └─ codex-acp         (cuenta ChatGPT)
-├─ sandboxes       → un contenedor por tarea, creado por OpenHands
-│                    (Flutter SDK + git + gh), con el repo clonado
-└─ volúmenes       → credenciales de los CLIs y estado de Canvas
+├─ canvas        → imagen propia FROM ghcr.io/openhands/agent-canvas:1.24.0
+│                  + Flutter SDK + gh. Todo en un contenedor: UI, Agent Server,
+│                  y los agentes ACP corriendo como subprocesos:
+│                  ├─ claude-agent-acp  (cuenta Claude Pro del piloto)
+│                  └─ codex-acp         (cuenta ChatGPT)
+│                  UI en http://localhost:8000/canvas
+├─ dispatcher    → Python; cada 60 s consulta GitHub (sin gastar cuota de
+│                  modelos) y crea/monitorea conversaciones vía la API de Canvas
+└─ volúmenes     → canvas-state (~/.openhands), projects (/projects, compartido
+                   entre canvas y dispatcher), dispatcher-state (estado + métricas)
 ```
+
+**Sin sandbox por tarea:** la imagen de Canvas ejecuta los agentes dentro del mismo contenedor ([arquitectura](https://docs.openhands.dev/openhands/usage/agent-canvas/architecture)). Cada tarea trabaja en su propia copia del repo en `/projects/<repo>/<tarea>`, que prepara el dispatcher. Dos conversaciones con el mismo motor comparten `HOME` y pueden pisarse los archivos de login, por eso el límite es **1 tarea por motor a la vez**.
+
+### Dispatcher
+
+Es un servicio sin estado propio importante: el estado de cada tarea vive en los labels de GitHub, y un archivo JSON (`dispatcher-state/state.json`) guarda solo lo efímero: conversaciones activas, comentarios ya procesados y rondas de review.
+
+En cada ciclo:
+1. Lee de GitHub los issues y PRs abiertos de los repos configurados.
+2. Lee de Canvas el estado de las conversaciones activas (`GET /api/conversations?ids=…`).
+3. Una función pura decide las acciones (iniciar tarea, cerrar tarea, marcar `needs:human`, pedir review) a partir de esas dos entradas.
+4. Ejecuta las acciones: prepara la copia del repo, crea la conversación (`POST /api/conversations` con `agent_settings` del motor, `workspace.working_dir` y el prompt del rol), actualiza labels y comentarios, y registra métricas.
+
+**Seguridad:** solo reacciona a comentarios `@openhands` de los usuarios en `ALLOWED_USERS` (Eduardo). Los labels que inician tareas solo los puede poner alguien con permiso de escritura en el repo.
 
 ### Credenciales y seguridad
 
-- **No se monta el `~/.claude` ni el `~/.codex` del host.** Los logins de Claude Pro y ChatGPT se hacen una vez *dentro* del contenedor y se guardan en volúmenes dedicados (`claude-auth`, `codex-auth`).
+- **No se monta el `~/.claude` ni el `~/.codex` del host.** Las credenciales se generan en contenedores descartables y se cargan como variables en `.env`:
+  - `CLAUDE_CODE_OAUTH_TOKEN`: lo genera `claude setup-token` iniciando sesión con la **cuenta Pro del piloto** (dura 1 año).
+  - `CODEX_AUTH_JSON`: el contenido de `~/.codex/auth.json` después de `codex login --device-auth` con la cuenta de ChatGPT.
+- `LOCAL_BACKEND_API_KEY` protege la API de Canvas; el dispatcher la usa en el header `X-Session-API-Key`.
 - `maxiar-ai-dev-team-bot` usa un token con permisos acotados solo a `maxiar-org` (contents, issues y pull requests en lectura y escritura). El token va en `.env`, que está en `.gitignore`.
-- Respaldo: la API key de Anthropic (tope USD 100) se carga como secreto en Canvas, pero **inactiva** mientras el CLI tenga login. Solo se usa si Eduardo cambia a ese modo a propósito.
+- Respaldo: la API key de Anthropic (tope USD 100) queda comentada en `.env`. No se deben definir las dos a la vez: activarla es un cambio consciente de Eduardo.
 - En `qr-generator`, `main` queda protegida: exige PR, que pase el CI y una aprobación de Eduardo. El bot no puede saltarse esa protección.
 
 ### Portabilidad
 
-Se usan imágenes multiplataforma (arm64 en la Mac, amd64 en la mini-PC) y nada que dependa de macOS. Migrar consiste en clonar `ai-dev-team`, restaurar los volúmenes (o volver a iniciar sesión) y ejecutar `docker compose up`.
+Se usan imágenes multiplataforma (arm64 en la Mac, amd64 en la mini-PC) y nada que dependa de macOS. Migrar consiste en clonar `ai-dev-team`, copiar `.env` y ejecutar `docker compose up --build`.
 
 ## 4. Flujo de trabajo
 
@@ -97,15 +119,19 @@ Los motores se invierten por tarea cambiando el label `engine:*` del issue.
 Eduardo: issue con plantilla (contexto, criterios de aceptación, entregable visible, fuera de alcance)
  │  label agent:dev
  ▼
-DEV (sandbox): lee AGENTS.md + roles/dev.md → rama agent/<n>-<slug>
+DEV (copia propia del repo): lee AGENTS.md + roles/dev.md → rama agent/<n>-<slug>
  │  TDD: test → código → flutter analyze + flutter test
  │  ¿dudas? → comenta preguntas en el issue + label needs:human → se detiene
  ▼
-PR "Closes #n" + label agent:review         (CI corre en paralelo)
+PR "Closes #n"; el dispatcher le pone agent:review   (CI corre en paralelo)
  ▼
-REVIEWER (otro motor): review con comentarios en el PR
- │  ¿cambios? → @openhands en el PR → DEV itera
+REVIEWER (otro motor): review como comentario en el PR, que termina con
+ │  VEREDICTO: APROBADO o VEREDICTO: CAMBIOS
+ │  (el bot no puede aprobar ni rechazar formalmente su propio PR)
+ │  ¿CAMBIOS? → el dispatcher lanza al DEV de nuevo sobre la rama del PR
  │  máximo 2 rondas automáticas → después needs:human
+ ▼
+APROBADO → el dispatcher te pide review en GitHub
  ▼
 Eduardo: revisa, comenta (@openhands para pedir cambios) o aprueba y mergea
 ```
@@ -124,29 +150,29 @@ La plantilla `agent-task.md` incluye el campo **Entregable visible**: qué podr�
 
 ### Límites del piloto
 
-- Máximo **2 tareas en paralelo**.
+- Máximo **1 tarea por motor** a la vez (o sea, hasta 2 en paralelo: una Codex y una Claude).
 - Máximo **2 rondas** automáticas entre reviewer y dev.
-- **60 minutos** sin abrir un PR → `needs:human`.
+- **60 minutos** de conversación → el dispatcher la pausa (`POST /api/conversations/{id}/pause`) y marca `needs:human`.
 
 ### Labels
 
-`agent:dev`, `agent:review`, `needs:human`, `engine:claude`, `engine:codex`. Se definen en `ai-dev-team/github/labels.yml` y se sincronizan con `gh label` a cada proyecto.
+`agent:dev`, `agent:working` (lo pone el dispatcher mientras hay una conversación activa), `agent:review`, `needs:human`, `engine:claude`, `engine:codex`. Se definen en `ai-dev-team/github/labels.yml` y se sincronizan con `gh label` a cada proyecto.
 
 ## 5. Métricas y manejo de errores
 
 ### Métricas (`pilot/metrics.csv`)
 
-Una fila por tarea y rol:
+El dispatcher escribe una fila cada vez que termina una conversación:
 
 | Campo | Fuente |
 |---|---|
-| `issue`, `pr`, `rol`, `motor` | Labels y referencias de GitHub |
-| `inicio`, `pr_abierto`, `fin`, `duracion_min` | Historial de eventos de GitHub (label aplicado, PR abierto o mergeado) |
-| `rondas_review`, `needs_human` | Comentarios y labels |
-| `resultado` | `mergeado` / `rechazado` / `abandonado` |
-| `tokens` / `cuota` | Logs de los CLIs en Canvas cuando estén disponibles; si no, anotación manual del consumo visto en claude.ai y en ChatGPT |
+| `repo`, `numero`, `tipo` (issue/pr), `rol`, `motor` | La tarea que lanzó el dispatcher |
+| `inicio`, `fin`, `duracion_min` | Reloj del dispatcher |
+| `estado_final` | Estado de Canvas: `finished`, `error`, `stuck` o `timeout` |
+| `resultado` | `pr_abierto`, `needs_human`, `aprobado`, `cambios` o `sin_resultado` |
+| `tokens_entrada`, `tokens_salida`, `tokens_cache`, `costo_estimado_usd` | `stats` de la conversación en Canvas, que reporta los tokens también para los agentes ACP. El costo es una estimación a precios de API: sirve para comparar, no es lo que se paga con la suscripción. |
 
-`pilot/collect-metrics` es un script que se ejecuta a demanda (no un servicio) y regenera el CSV a partir de la API de GitHub.
+Si se mergeó o no cada PR se consulta al momento del reporte final, con `python -m dispatcher report`, que combina el CSV con el estado actual en GitHub.
 
 ### Reporte final (`pilot/REPORT.md`)
 
@@ -162,7 +188,7 @@ Una fila por tarea y rol:
 | Se agotan los límites de un motor | El agente falla, se pone `needs:human` y un comentario con el motivo. Eduardo puede reintentar con el otro motor (cambiando el label) o activar la API de respaldo. |
 | El CI falla en un PR | El reviewer lo marca y el dev itera (cuenta como ronda). |
 | El agente se cuelga o pasa los 60 minutos | `needs:human`; la conversación queda en Canvas para diagnóstico. |
-| Expira el login de un CLI | `pilot/healthcheck` (diario) lo detecta y abre un issue en `ai-dev-team`. |
+| Expira el login de un CLI o se cae Canvas | La conversación termina en `error` y el dispatcher marca `needs:human` con un comentario que incluye el último mensaje del agente. Si Canvas no responde, el dispatcher lo registra en su log y reintenta en el siguiente ciclo sin tocar GitHub. |
 | El agente intenta mergear o escribir en `main` | La protección de la rama lo bloquea. |
 
 ## 6. Validación y arranque
@@ -170,9 +196,9 @@ Una fila por tarea y rol:
 ### Paso 0: verificación de la infraestructura (lista de comprobación)
 
 1. `docker compose up` deja Canvas accesible en `localhost`.
-2. Claude (Pro) y Codex (ChatGPT) responden vía ACP desde Canvas, con los logins guardados en volúmenes.
+2. Claude (Pro) y Codex (ChatGPT) responden vía ACP desde Canvas, con las credenciales de `.env`, y `flutter --version` y `gh auth status` funcionan dentro del contenedor.
 3. El bot clona el repo, crea una rama y abre un PR en un repo de prueba de `maxiar-org`.
-4. **Prueba decisiva:** el label `agent:dev` dispara la automatización en la versión open source. **Si no la dispara:** se detiene, se avisa a Eduardo y se diseña el enfoque 2 (despachador mínimo) antes de seguir.
+4. **Prueba de punta a punta:** en el repo de prueba, un issue simple con `agent:dev` termina en un PR revisado por el otro motor, con una fila en `metrics.csv` que incluye tokens.
 5. La protección de `main` impide que el bot mergee.
 
 ### Proyecto piloto `qr-generator`
@@ -211,11 +237,12 @@ Cada issue declara su **entregable visible** (ver la plantilla en la sección 4)
 | Riesgo | Mitigación |
 |---|---|
 | Anthropic bloquea el uso de la suscripción vía ACP | Cuenta Pro aparte; pasar al modo híbrido o a la API de respaldo. |
-| Las automatizaciones de GitHub de Canvas son solo Enterprise | Se detecta en el paso 0.4 y se pasa al enfoque 2. |
+| La API de Canvas cambia entre versiones | Se fija la versión de la imagen (`1.24.0`) y el cliente del dispatcher se aísla en un solo módulo. |
 | Los límites de Claude Pro son muy bajos para 2 tareas en paralelo | Dev con Codex por defecto; bajar a 1 tarea en paralelo; usar la API de respaldo. |
 | Bug de autenticación headless de Codex vía ACP ([OpenHands SDK #5167](https://github.com/OpenHands/software-agent-sdk/issues/5167)) | Se verifica en el paso 0.2; alternativa: `codex login --device-auth` dentro del contenedor. |
 | Al probar desde el iPhone por HTTP en la red local, el navegador no permite copiar al portapapeles ni instalar la web como app (exigen HTTPS) | Para la prueba en red local alcanza con "Guardar imagen". Si hace falta, se agrega HTTPS con un certificado local o un túnel; si escala, pasa a la fase 4. |
-| La imagen de Flutter en los sandboxes es pesada o lenta | Imagen de sandbox propia con Flutter preinstalado y caché de `pub`. |
+| La imagen de Canvas con Flutter es pesada (varios GB) | Se construye una vez; la caché de `pub` vive en el volumen `projects`. |
+| Todos los agentes comparten un contenedor (sin aislamiento entre tareas) | Aceptado para el piloto: los repos son propios y el token del bot solo alcanza a `maxiar-org`. Para la fase 2 se puede evaluar el runtime Docker por conversación. |
 
 ## 9. Fuentes
 
