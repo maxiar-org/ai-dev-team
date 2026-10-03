@@ -1,0 +1,50 @@
+name: ai-dev-team
+
+services:
+  canvas:
+    build: ./canvas
+    image: ai-dev-team/canvas:1.24.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      LOCAL_BACKEND_API_KEY: ${CANVAS_API_KEY:?falta CANVAS_API_KEY en .env}
+      OH_SECRET_KEY: ${OH_SECRET_KEY:?falta OH_SECRET_KEY en .env}
+      AGENT_CANVAS_DISABLE_TELEMETRY: "1"
+      # Suscripciones (opción C del spec). Para el respaldo pagado ver README.
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      CODEX_AUTH_JSON: ${CODEX_AUTH_JSON:-}
+      # gh y git dentro de las conversaciones actúan como maxiar-ai-dev-team-bot.
+      GH_TOKEN: ${GITHUB_TOKEN:?falta GITHUB_TOKEN en .env}
+    volumes:
+      - canvas-state:/home/openhands/.openhands
+      - projects:/projects
+
+  dispatcher:
+    build: ./dispatcher
+    restart: unless-stopped
+    depends_on:
+      - canvas
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_ORG: ${GITHUB_ORG:-maxiar-org}
+      REPOS: ${REPOS:?falta REPOS en .env}
+      ALLOWED_USERS: ${ALLOWED_USERS:?falta ALLOWED_USERS en .env}
+      BOT_LOGIN: ${BOT_LOGIN:-maxiar-ai-dev-team-bot}
+      DEFAULT_DEV_ENGINE: ${DEFAULT_DEV_ENGINE:-codex}
+      CANVAS_URL: http://canvas:8000
+      CANVAS_API_KEY: ${CANVAS_API_KEY}
+      PROJECTS_DIR: /projects
+      STATE_PATH: /state/state.json
+      METRICS_PATH: /pilot/metrics.csv
+      ROLES_DIR: /app/roles
+    volumes:
+      - projects:/projects
+      - dispatcher-state:/state
+      - ./roles:/app/roles:ro
+      - ./pilot:/pilot
+
+volumes:
+  canvas-state:
+  projects:
+  dispatcher-state:
