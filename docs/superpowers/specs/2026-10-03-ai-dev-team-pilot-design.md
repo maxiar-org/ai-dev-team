@@ -28,10 +28,7 @@ Principios acordados:
 
 - **A. Entrega autónoma:** un issue bien escrito termina en un PR mergeable con los tests pasando, sin que Eduardo escriba código. Él solo revisa y comenta.
 - **C. Consumo sostenible:** con Claude Pro y ChatGPT se logra completar el MVP sin topar los límites de forma constante. Se mide cuántas tareas rinde cada ventana de 5 horas y cada semana.
-- **E. Entregables visibles:** el equipo produce artefactos que se pueden ver o probar sin leer código:
-  - `docs/requirements.md`: lista de requerimientos consolidada del proyecto.
-  - `README.md` con un manual de instalación y uso.
-  - La app web corriendo en un contenedor Docker, que se levanta con `docker compose up` y queda lista para probar desde un navegador o el iPhone en la red local.
+- **E. Entregables visibles:** cada etapa del proyecto termina en un artefacto que se puede ver, probar o usar sin leer código. Su tipo depende de la etapa: un documento (por ejemplo, requerimientos), la app corriendo en un contenedor Docker, o un manual con scripts listos para instalar en la mini-PC. No hay una lista fija: en el piloto basta con que los agentes entreguen alguno y que sea útil tal cual.
 
 No hay plazo fijo: se busca un resultado rápido sobre si la idea es viable.
 
@@ -97,7 +94,7 @@ Los motores se invierten por tarea cambiando el label `engine:*` del issue.
 ### Ciclo de vida de un issue
 
 ```
-Eduardo: issue con plantilla (contexto, criterios de aceptación, fuera de alcance)
+Eduardo: issue con plantilla (contexto, criterios de aceptación, entregable visible, fuera de alcance)
  │  label agent:dev
  ▼
 DEV (sandbox): lee AGENTS.md + roles/dev.md → rama agent/<n>-<slug>
@@ -112,6 +109,10 @@ REVIEWER (otro motor): review con comentarios en el PR
  ▼
 Eduardo: revisa, comenta (@openhands para pedir cambios) o aprueba y mergea
 ```
+
+### Entregable visible por issue
+
+La plantilla `agent-task.md` incluye el campo **Entregable visible**: qué podrá ver, probar o usar Eduardo al terminar (documento, app en contenedor, script, manual). El dev lo incluye en el PR, con instrucciones para verlo, y el reviewer verifica que esté presente y que funcione.
 
 ### Puntos de intervención de Eduardo
 
@@ -151,7 +152,7 @@ Una fila por tarea y rol:
 
 - **Criterio A:** porcentaje de issues que terminaron en PR mergeado sin código de Eduardo; rondas promedio; motivos de `needs:human`.
 - **Criterio C:** tareas por ventana de 5 horas y por semana para cada motor; si fue necesario recurrir a la API, cuánto se gastó.
-- **Criterio E:** cuáles de los tres entregables se lograron, con enlace a cada uno, y cuánto tuvo que corregirlos Eduardo.
+- **Criterio E:** qué entregables visibles produjeron los agentes, con enlace a cada uno, y cuánto tuvo que corregirlos Eduardo antes de que fueran útiles.
 - Recomendación: seguir con la fase 2, pasar al modo híbrido o descartar la idea.
 
 ### Manejo de errores
@@ -184,19 +185,18 @@ Una fila por tarea y rol:
 
 **Backlog inicial** (∥ = puede trabajarse en paralelo):
 
-0. **Requerimientos** (tarea de documentación): consolidar el contexto de este spec y los issues en `docs/requirements.md` (requerimientos funcionales y no funcionales, preguntas abiertas para Eduardo y Maxi). Es el primer entregable visible y no depende del scaffold.
 1. **Scaffold:** app Flutter (web instalable + iOS), estructura, `AGENTS.md`, CI (analyze + test).
-2. **Contenedor de prueba:** `Dockerfile` multi-stage (build web de Flutter → nginx) + `docker-compose.yml` en `qr-generator`; el CI verifica que la imagen se construya. Depende del 1.
-3. ∥ **QR de WhatsApp:** normaliza números argentinos a `wa.me/549…`, con mensaje inicial opcional.
-4. ∥ **QR de Instagram:** acepta tanto el link como `@usuario`.
-5. ∥ **Diseño de impresión:** imagen de 464 px de ancho (QR + ícono + texto) en variantes por plantilla. Las medidas las confirma Eduardo con Maxi.
-6. **Guardar en Fotos y copiar link:** flujo hacia WePrint.
-7. **Manual de instalación y uso:** `README.md` con requisitos previos, cómo levantar el contenedor, cómo abrirlo en el iPhone e instalarlo como app web, y el flujo de impresión con WePrint. Se hace después del 6 para documentar el flujo real.
-8. **Google Reseñas** (research + implementación): pasar de un link de Maps al link directo para dejar una reseña.
-9. **Mercado Pago Argentina** (spike): comparar alias/CVU, link de pago y QR interoperable (Transferencias 3.0), y proponer una opción.
-10. **Impresión directa** (spike): LPAPI con la DT01 en iOS desde Flutter.
+2. ∥ **QR de WhatsApp:** normaliza números argentinos a `wa.me/549…`, con mensaje inicial opcional.
+3. ∥ **QR de Instagram:** acepta tanto el link como `@usuario`.
+4. ∥ **Diseño de impresión:** imagen de 464 px de ancho (QR + ícono + texto) en variantes por plantilla. Las medidas las confirma Eduardo con Maxi.
+5. **Guardar en Fotos y copiar link:** flujo hacia WePrint.
+6. **Google Reseñas** (research + implementación): pasar de un link de Maps al link directo para dejar una reseña.
+7. **Mercado Pago Argentina** (spike): comparar alias/CVU, link de pago y QR interoperable (Transferencias 3.0), y proponer una opción.
+8. **Impresión directa** (spike): LPAPI con la DT01 en iOS desde Flutter.
 
-**El piloto termina** cuando se mergean los issues 0 a 7 (MVP utilizable por Maxi, con sus tres entregables visibles) o cuando Eduardo lo decida. Al cierre se escribe `pilot/REPORT.md`.
+Cada issue declara su **entregable visible** (ver la plantilla en la sección 4). Por ejemplo: el 1 puede entregar la app vacía corriendo en un contenedor, el 7 un documento comparativo, y el 5 la app con el flujo completo para probar en el iPhone.
+
+**El piloto termina** cuando se mergean los issues 1 a 5 (MVP utilizable por Maxi) o cuando Eduardo lo decida. Al cierre se escribe `pilot/REPORT.md`.
 
 ## 7. Fuera de alcance (fase 1)
 
@@ -214,7 +214,7 @@ Una fila por tarea y rol:
 | Las automatizaciones de GitHub de Canvas son solo Enterprise | Se detecta en el paso 0.4 y se pasa al enfoque 2. |
 | Los límites de Claude Pro son muy bajos para 2 tareas en paralelo | Dev con Codex por defecto; bajar a 1 tarea en paralelo; usar la API de respaldo. |
 | Bug de autenticación headless de Codex vía ACP ([OpenHands SDK #5167](https://github.com/OpenHands/software-agent-sdk/issues/5167)) | Se verifica en el paso 0.2; alternativa: `codex login --device-auth` dentro del contenedor. |
-| Desde el iPhone por HTTP en la red local, el navegador no permite copiar al portapapeles ni instalar la web como app (exigen HTTPS) | Para la prueba en red local alcanza con "Guardar imagen". Si hace falta, se agrega HTTPS con un certificado local o un túnel; si escala, pasa a la fase 4. |
+| Al probar desde el iPhone por HTTP en la red local, el navegador no permite copiar al portapapeles ni instalar la web como app (exigen HTTPS) | Para la prueba en red local alcanza con "Guardar imagen". Si hace falta, se agrega HTTPS con un certificado local o un túnel; si escala, pasa a la fase 4. |
 | La imagen de Flutter en los sandboxes es pesada o lenta | Imagen de sandbox propia con Flutter preinstalado y caché de `pub`. |
 
 ## 9. Fuentes
