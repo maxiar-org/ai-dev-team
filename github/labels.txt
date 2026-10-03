@@ -1,0 +1,8 @@
+# nombre|color|descripción
+agent:dev|1d76db|Un agente dev implementa este issue
+agent:working|fbca04|Un agente está trabajando (lo pone el dispatcher)
+agent:review|5319e7|Un agente reviewer revisa este PR (lo pone el dispatcher)
+agent:fix|d93f0b|El dev debe atender la review (lo pone el dispatcher)
+needs:human|b60205|Esperando una decisión de Eduardo
+engine:claude|c5def5|Motor: Claude Code
+engine:codex|bfd4f2|Motor: Codex

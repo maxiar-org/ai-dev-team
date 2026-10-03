@@ -51,7 +51,7 @@ No hay plazo fijo: se busca un resultado rápido sobre si la idea es viable.
 - **`ai-dev-team`** (esta carpeta, `~/ai-dev-team`): la infraestructura del equipo.
   - `docker-compose.yml`, `.env.example` (el `.env` real no se versiona)
   - `roles/dev.md`, `roles/reviewer.md`: instrucciones de cada rol
-  - `github/labels.yml`, `github/ISSUE_TEMPLATE/agent-task.md`: se sincronizan a cada proyecto
+  - `github/labels.txt`, `github/ISSUE_TEMPLATE/agent-task.md`: se sincronizan a cada proyecto
   - `canvas/Dockerfile`: imagen de Canvas con Flutter y `gh` preinstalados
   - `dispatcher/`: servicio Python que conecta GitHub con Canvas (con tests)
   - `pilot/metrics.csv` (generado por el dispatcher), `pilot/REPORT.md`
@@ -156,7 +156,7 @@ La plantilla `agent-task.md` incluye el campo **Entregable visible**: qué podr�
 
 ### Labels
 
-`agent:dev`, `agent:working` (lo pone el dispatcher mientras hay una conversación activa), `agent:review`, `agent:fix` (lo pone el dispatcher cuando el reviewer pide cambios), `needs:human`, `engine:claude`, `engine:codex`. Se definen en `ai-dev-team/github/labels.yml` y se sincronizan con `gh label` a cada proyecto.
+`agent:dev`, `agent:working` (lo pone el dispatcher mientras hay una conversación activa), `agent:review`, `agent:fix` (lo pone el dispatcher cuando el reviewer pide cambios), `needs:human`, `engine:claude`, `engine:codex`. Se definen en `ai-dev-team/github/labels.txt` y se sincronizan con `gh label` a cada proyecto.
 
 ## 5. Métricas y manejo de errores
 
