@@ -107,3 +107,25 @@ class FakeWorkspace:
         path = self.root / repo / f"{kind}-{number}"
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+
+class FakeBoard:
+    def __init__(self):
+        self.items: dict[str, tuple[str, str | None]] = {}
+        self.node_to_key: dict[str, str] = {}
+        self.fail = False
+
+    def load(self):
+        if self.fail:
+            raise RuntimeError("Projects caído")
+        return dict(self.items)
+
+    def add(self, node_id):
+        item_id = f"PVTI_{len(self.items) + 1}"
+        self.items[self.node_to_key[node_id]] = (item_id, None)
+        return item_id
+
+    def set_column(self, item_id, column):
+        for key, (iid, _) in self.items.items():
+            if iid == item_id:
+                self.items[key] = (iid, column)

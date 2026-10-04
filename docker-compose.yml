@@ -36,6 +36,7 @@ services:
       ALLOWED_USERS: ${ALLOWED_USERS:?falta ALLOWED_USERS en .env}
       BOT_LOGIN: ${BOT_LOGIN:-maxiar-ai-dev-team-bot}
       DEFAULT_DEV_ENGINE: ${DEFAULT_DEV_ENGINE:-codex}
+      PROJECT_NUMBER: ${PROJECT_NUMBER:-}
       CANVAS_URL: http://canvas:8000
       CANVAS_API_KEY: ${CANVAS_API_KEY}
       PROJECTS_DIR: /projects

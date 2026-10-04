@@ -38,6 +38,7 @@ class Config:
     max_review_rounds: int = 2
     idle_grace_seconds: int = 120
     default_dev_engine: str = "codex"
+    project_number: int | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -88,4 +89,5 @@ class Config:
             max_review_rounds=integer("MAX_REVIEW_ROUNDS", 2),
             idle_grace_seconds=integer("IDLE_GRACE_SECONDS", 120),
             default_dev_engine=engine,
+            project_number=integer("PROJECT_NUMBER", 0) or None,
         )

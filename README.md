@@ -20,6 +20,8 @@ toma issues etiquetados, abre PRs, los revisa con otro modelo y te pide la aprob
 
 Para ver el trabajo en vivo, abre http://localhost:8000/canvas (pide la `CANVAS_API_KEY`).
 
+Para ver el estado general, usa el **tablero** https://github.com/orgs/maxiar-org/projects/1. El dispatcher agrega cada issue y PR de los repos en `REPOS` y lo mueve de columna según sus labels: Backlog → Listo para agentes → En curso → En review / Necesita a Eduardo. La columna Hecho la pone la automatización nativa del tablero al cerrar o mergear.
+
 ## Arrancar
 
 ```bash

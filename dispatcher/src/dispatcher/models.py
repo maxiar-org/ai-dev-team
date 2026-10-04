@@ -44,6 +44,7 @@ class Item:
     body: str
     labels: frozenset[str]
     head_ref: str | None = None  # rama del PR
+    node_id: str = ""  # id GraphQL, para el tablero de Projects
 
     @property
     def key(self) -> str:

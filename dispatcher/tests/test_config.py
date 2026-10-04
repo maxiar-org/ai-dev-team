@@ -36,3 +36,10 @@ def test_missing_required_variable_names_it():
 def test_invalid_values_are_rejected(name, value):
     with pytest.raises(ConfigError, match=name):
         Config.from_env({**BASE, name: value})
+
+
+def test_project_number_is_optional():
+    assert Config.from_env(BASE).project_number is None
+    assert Config.from_env({**BASE, "PROJECT_NUMBER": "1"}).project_number == 1
+    with pytest.raises(ConfigError, match="PROJECT_NUMBER"):
+        Config.from_env({**BASE, "PROJECT_NUMBER": "x"})

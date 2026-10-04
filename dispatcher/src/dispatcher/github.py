@@ -63,6 +63,7 @@ class GitHubClient:
                     body=raw.get("body") or "",
                     labels=frozenset(label["name"] for label in raw.get("labels", [])),
                     head_ref=heads.get(raw["number"]) if is_pr else None,
+                    node_id=raw.get("node_id", ""),
                 )
             )
         return items

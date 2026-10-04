@@ -90,3 +90,10 @@ def test_server_errors_raise(gh):
     route("POST", "/issues/3/comments").respond(500)
     with pytest.raises(httpx.HTTPStatusError):
         gh.comment("qr", 3, "hola")
+
+
+@respx.mock
+def test_list_open_items_keeps_node_id(gh):
+    route("GET", "/pulls").respond(json=[])
+    route("GET", "/issues").respond(json=[{"number": 3, "node_id": "I_kw3", "title": "WA", "body": "", "labels": []}])
+    assert gh.list_open_items("qr")[0].node_id == "I_kw3"

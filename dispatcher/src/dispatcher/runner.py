@@ -6,6 +6,7 @@ import logging
 import time
 from collections.abc import Callable
 
+from .board import AddToBoard, plan_board
 from .canvas import CanvasBusy
 from .config import Config
 from .decide import decide
@@ -39,7 +40,7 @@ log = logging.getLogger("dispatcher")
 
 class Dispatcher:
     def __init__(self, cfg: Config, github, canvas, workspace, store: StateStore, metrics: MetricsLog,
-                 clock: Callable[[], float] = time.time):
+                 clock: Callable[[], float] = time.time, board=None):
         self.cfg = cfg
         self.github = github
         self.canvas = canvas
@@ -47,6 +48,7 @@ class Dispatcher:
         self.store = store
         self.metrics = metrics
         self.clock = clock
+        self.board = board
 
     def run_once(self) -> list[Action]:
         state = self.store.load()
@@ -72,7 +74,25 @@ class Dispatcher:
             except Exception:
                 log.exception("Falló la acción %s", type(action).__name__)
             self.store.save(state)
+        if self.board is not None:
+            try:
+                self._sync_board(items)
+            except Exception:
+                log.exception("Falló la sincronización del tablero")
         return actions
+
+    def _sync_board(self, items: list[Item]) -> None:
+        # Usa los labels del inicio del ciclo: los cambios de este ciclo se reflejan en el siguiente.
+        for op in plan_board(items, self.board.load()):
+            try:
+                if isinstance(op, AddToBoard):
+                    if not op.item.node_id:
+                        continue
+                    self.board.set_column(self.board.add(op.item.node_id), op.column)
+                else:
+                    self.board.set_column(op.board_item_id, op.column)
+            except Exception as exc:
+                log.warning("No pude actualizar el tablero para %s: %s", getattr(op, "key", None) or op.item.key, exc)
 
     def _apply(self, action: Action, state: State, items: list[Item], now: float) -> None:
         if isinstance(action, PauseConversation):

@@ -149,3 +149,33 @@ def test_orphan_working_label_is_released(tmp_path, cfg):
     assert gh.labels(3) == {"needs:human"}
     assert "agent:working" in gh.posted[0][1]
     assert cv.created == []
+
+
+def test_board_follows_labels(tmp_path, cfg):
+    from .fakes import FakeBoard
+
+    gh, cv = FakeGitHub(), FakeCanvas()
+    board = FakeBoard()
+    d = Dispatcher(cfg, gh, cv, FakeWorkspace(tmp_path / "p"), StateStore(cfg.state_path),
+                   MetricsLog(cfg.metrics_path), clock=Clock(10_000.0), board=board)
+    gh.add_item(Item(REPO, 3, "issue", "T", "", frozenset({"agent:dev"}), node_id="I_3"))
+    gh.add_item(Item(REPO, 4, "issue", "U", "", frozenset(), node_id="I_4"))
+    board.node_to_key = {"I_3": f"{REPO}#3", "I_4": f"{REPO}#4"}
+    d.run_once()  # agrega al tablero con la columna vista al inicio del ciclo
+    assert board.items[f"{REPO}#3"][1] == "Listo para agentes"
+    assert board.items[f"{REPO}#4"][1] == "Backlog"
+    d.run_once()  # el ciclo siguiente ve agent:working
+    assert board.items[f"{REPO}#3"][1] == "En curso"
+
+
+def test_board_failure_does_not_break_the_cycle(tmp_path, cfg):
+    from .fakes import FakeBoard
+
+    gh, cv = FakeGitHub(), FakeCanvas()
+    board = FakeBoard()
+    board.fail = True
+    d = Dispatcher(cfg, gh, cv, FakeWorkspace(tmp_path / "p"), StateStore(cfg.state_path),
+                   MetricsLog(cfg.metrics_path), clock=Clock(10_000.0), board=board)
+    gh.add_item(Item(REPO, 3, "issue", "T", "", frozenset({"agent:dev"})))
+    d.run_once()
+    assert len(cv.created) == 1
