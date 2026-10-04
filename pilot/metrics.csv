@@ -1,0 +1,3 @@
+repo,numero,tipo,rol,motor,disparador,inicio,fin,duracion_min,estado_final,resultado,tokens_entrada,tokens_salida,tokens_cache,costo_estimado_usd,conversacion
+agent-playground,1,issue,dev,codex,label,2026-10-04T03:35:42+00:00,2026-10-04T03:37:48+00:00,2.1,finished,pr_abierto,657,104,17920,0.0000,face1407241f44cfb0d6c37e143b905a
+agent-playground,2,pr,review,claude,label,2026-10-04T03:38:52+00:00,2026-10-04T03:39:56+00:00,1.1,finished,aprobado,14,3704,242676,0.2279,ca0c6b3e5bfb45b285b8477ae7702da1
