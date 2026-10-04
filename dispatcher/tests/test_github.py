@@ -97,3 +97,15 @@ def test_list_open_items_keeps_node_id(gh):
     route("GET", "/pulls").respond(json=[])
     route("GET", "/issues").respond(json=[{"number": 3, "node_id": "I_kw3", "title": "WA", "body": "", "labels": []}])
     assert gh.list_open_items("qr")[0].node_id == "I_kw3"
+
+
+@respx.mock
+def test_pr_reviews_since_become_comments_with_negative_ids(gh):
+    route("GET", "/pulls/11/reviews").respond(json=[
+        {"id": 5, "user": {"login": "maxiar"}, "body": "viejo", "submitted_at": "2026-10-04T01:00:00Z"},
+        {"id": 6, "user": {"login": "maxiar"}, "body": "@openhands resolvé los conflictos", "submitted_at": "2026-10-04T20:54:52Z"},
+        {"id": 7, "user": {"login": "maxiar"}, "body": "", "submitted_at": "2026-10-04T21:00:00Z"},
+        {"id": 8, "user": None, "body": "x", "submitted_at": None},
+    ])
+    comments = gh.list_pr_reviews_since("qr", [11], "2026-10-04T03:31:03+00:00")
+    assert [(c.id, c.number, c.author, c.body) for c in comments] == [(-6, 11, "maxiar", "@openhands resolvé los conflictos")]

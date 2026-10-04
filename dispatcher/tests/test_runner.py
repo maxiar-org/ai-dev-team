@@ -179,3 +179,12 @@ def test_board_failure_does_not_break_the_cycle(tmp_path, cfg):
     gh.add_item(Item(REPO, 3, "issue", "T", "", frozenset({"agent:dev"})))
     d.run_once()
     assert len(cv.created) == 1
+
+
+def test_review_comment_from_eduardo_triggers_fix(tmp_path, cfg):
+    d, gh, cv, ws, clock = make(tmp_path, cfg)
+    gh.add_item(Item(REPO, 11, "pr", "IG", "", frozenset({"engine:codex"}), "agent/3-instagram"))
+    gh.comments.append(Comment(-6, REPO, 11, "maxiar", "@openhands resolvé los conflictos con main"))
+    d.run_once()
+    [(engine, workdir, prompt)] = cv.created
+    assert engine == "codex" and workdir.endswith("pr-11") and "resolvé los conflictos" in prompt

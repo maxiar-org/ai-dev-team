@@ -38,7 +38,10 @@ class FakeGitHub:
         return [i for (r, _), i in sorted(self.items.items()) if r == repo]
 
     def list_comments_since(self, repo, since):
-        return [c for c in self.comments if c.repo == repo]
+        return [c for c in self.comments if c.repo == repo and c.id > 0]
+
+    def list_pr_reviews_since(self, repo, numbers, since):
+        return [c for c in self.comments if c.repo == repo and c.id < 0 and c.number in numbers]
 
     def get_labels(self, repo, number):
         return self.items[(repo, number)].labels

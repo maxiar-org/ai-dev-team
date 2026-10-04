@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
@@ -83,6 +84,23 @@ class GitHubClient:
             )
             for c in raw
         ]
+
+    def list_pr_reviews_since(self, repo: str, numbers: Iterable[int], since: str) -> list[Comment]:
+        """Reviews de PR con texto, como comentarios. Su id es negativo para no chocar con los
+        ids de comentarios de issues en processed_comments."""
+        threshold = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        out: list[Comment] = []
+        for number in numbers:
+            for r in self._paginate(f"{self._repo(repo)}/pulls/{number}/reviews", {"per_page": 100}):
+                submitted = r.get("submitted_at")
+                body = r.get("body") or ""
+                if not submitted or not body.strip():
+                    continue
+                if datetime.fromisoformat(submitted.replace("Z", "+00:00")) < threshold:
+                    continue
+                author = (r.get("user") or {}).get("login", "")
+                out.append(Comment(id=-r["id"], repo=repo, number=number, author=author, body=body))
+        return out
 
     def get_labels(self, repo: str, number: int) -> frozenset[str]:
         resp = self.http.get(f"{self._repo(repo)}/issues/{number}")

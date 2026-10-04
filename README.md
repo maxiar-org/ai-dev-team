@@ -14,7 +14,7 @@ toma issues etiquetados, abre PRs, los revisa con otro modelo y te pide la aprob
 | — | El dispatcher le pone `agent:review` al PR y lo revisa el otro modelo |
 | — | Si hay `VEREDICTO: CAMBIOS`, el dev corrige (máximo 2 rondas) |
 | — | Si hay `VEREDICTO: APROBADO`, te llega un pedido de review en GitHub |
-| Comentas `@openhands ...` en un issue o PR | El dev retoma la tarea con tu instrucción |
+| Comentas `@openhands ...` en un issue o PR (comentario normal o review del PR; no en comentarios sobre líneas de código) | El dev retoma la tarea con tu instrucción |
 | Ves `needs:human` | Un agente necesita una decisión tuya: respóndele con `@openhands ...` |
 | Apruebas y mergeas | Solo tú puedes hacerlo; `main` está protegida |
 

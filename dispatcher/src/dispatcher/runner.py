@@ -64,8 +64,12 @@ class Dispatcher:
         items: list[Item] = []
         comments = []
         for repo in self.cfg.repos:
-            items += self.github.list_open_items(repo)
+            repo_items = self.github.list_open_items(repo)
+            items += repo_items
             comments += self.github.list_comments_since(repo, state.comments_since)
+            # Un @openhands también puede venir en una review del PR ("Review changes" → Comment).
+            prs = [i.number for i in repo_items if i.kind == "pr"]
+            comments += self.github.list_pr_reviews_since(repo, prs, state.comments_since)
 
         actions = decide(items, comments, convs, state, self.cfg, now)
         for action in actions:
