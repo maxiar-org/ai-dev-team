@@ -37,8 +37,8 @@ docker compose logs -f dispatcher
   3. Pega el token en `CLAUDE_CODE_OAUTH_TOKEN`. Dura 1 año.
 - **Codex (ChatGPT):**
   1. Habilita el login por código de dispositivo en la configuración de seguridad de ChatGPT.
-  2. Ejecuta:
-     `docker run --rm -it -v "$PWD:/out" node:22-slim sh -c "npm i -g @openai/codex >/dev/null && codex login --device-auth && node -e 'process.stdout.write(JSON.stringify(require(\"/root/.codex/auth.json\")))' > /out/codex_auth.json"`
+  2. Ejecuta (la imagen slim no trae certificados raíz, por eso se instala `ca-certificates`):
+     `docker run --rm -it -v "$PWD:/out" node:22-slim sh -c "apt-get update -qq >/dev/null && apt-get install -y -qq ca-certificates >/dev/null && npm i -g @openai/codex >/dev/null && codex login --device-auth && node -e 'process.stdout.write(JSON.stringify(require(\"/root/.codex/auth.json\")))' > /out/codex_auth.json"`
   3. Copia el contenido de `codex_auth.json` en `CODEX_AUTH_JSON` y borra el archivo: `rm codex_auth.json`.
 - **Respaldo pagado (API de Anthropic, tope USD 100):**
   1. Agrega `ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}` al servicio `canvas` del compose.
