@@ -1,12 +1,14 @@
 import pytest
 
-from dispatcher.decide import decide
+from dispatcher.decide import CONFLICT_INSTRUCTION, decide, parse_dependencies
 from dispatcher.models import (
     ActiveTask,
     Comment,
     ConvInfo,
     FinishTask,
     Item,
+    BlockedNotice,
+    EscalateConflict,
     PauseConversation,
     ReleaseOrphan,
     StartTask,
@@ -153,3 +155,66 @@ def test_working_label_with_active_task_is_kept(cfg):
     st = state_with(active(1))
     actions = decide([issue(1, "agent:working")], [], {"c1": ConvInfo("c1", "running")}, st, cfg, NOW)
     assert actions == []
+
+
+
+def dirty_pr(n, *labels):
+    return Item("qr", n, "pr", "PR", "", frozenset({"engine:codex", *labels}), f"agent/{n}-x", mergeable_state="dirty")
+
+
+def test_quiet_pr_with_conflicts_gets_a_fix(cfg):
+    [start] = starts(decide([dirty_pr(11)], [], {}, State(), cfg, NOW))
+    assert (start.role, start.engine, start.trigger, start.instruction) == ("fix", "codex", "conflict", CONFLICT_INSTRUCTION)
+
+
+@pytest.mark.parametrize("label", ["agent:working", "agent:review", "agent:fix", "needs:human"])
+def test_busy_pr_with_conflicts_is_left_alone(cfg, label):
+    actions = decide([dirty_pr(11, label)], [], {}, State(active={}), cfg, NOW)
+    assert [a for a in actions if isinstance(a, StartTask) and a.trigger == "conflict"] == []
+
+
+def test_pr_without_conflicts_or_unknown_state_is_left_alone(cfg):
+    clean = Item("qr", 11, "pr", "PR", "", frozenset(), "agent/3-x", mergeable_state="clean")
+    unknown = Item("qr", 12, "pr", "PR", "", frozenset(), "agent/4-x", mergeable_state=None)
+    assert decide([clean, unknown], [], {}, State(), cfg, NOW) == []
+
+
+def test_conflict_escalates_after_two_attempts(cfg):
+    pr11 = dirty_pr(11)
+    assert decide([pr11], [], {}, State(conflict_attempts={"qr#11": 2}), cfg, NOW) == [EscalateConflict(pr11)]
+
+
+def test_priority_is_comment_then_conflict_then_label(cfg):
+    items = [issue(1, "agent:dev"), dirty_pr(11), issue(2, "needs:human")]
+    [start] = starts(decide(items, [], {}, State(), cfg, NOW))
+    assert start.item.number == 11
+    c = Comment(90, "qr", 2, "maxiar", "@openhands sigue")
+    [start] = starts(decide(items, [c], {}, State(), cfg, NOW))
+    assert start.item.number == 2
+
+
+def test_parse_dependencies_ignores_html_comments():
+    body = "<!-- Ej: Depende de #9 -->\n## Depende de\nDepende de #4 y #6\nblocked by #7"
+    assert parse_dependencies(body) == (4, 6, 7)
+    assert parse_dependencies("Usa el #4 como referencia") == ()
+
+
+def test_issue_waits_for_open_dependency_and_notifies_once(cfg):
+    blocked = Item("qr", 5, "issue", "Guardar", "Depende de #4", frozenset({"agent:dev"}))
+    dep = issue(4)
+    assert decide([blocked, dep], [], {}, State(), cfg, NOW) == [BlockedNotice(blocked, (4,))]
+    notified = State(blocked_notified={"qr#5": [4]})
+    assert decide([blocked, dep], [], {}, notified, cfg, NOW) == []
+
+
+def test_issue_starts_when_dependency_is_closed(cfg):
+    blocked = Item("qr", 5, "issue", "Guardar", "Depende de #4", frozenset({"agent:dev"}))
+    [start] = starts(decide([blocked], [], {}, State(blocked_notified={"qr#5": [4]}), cfg, NOW))
+    assert start.item.number == 5
+
+
+def test_eduardo_comment_overrides_dependency(cfg):
+    blocked = Item("qr", 5, "issue", "Guardar", "Depende de #4", frozenset({"agent:dev"}))
+    c = Comment(91, "qr", 5, "maxiar", "@openhands arrancá igual")
+    [start] = starts(decide([blocked, issue(4)], [c], {}, State(), cfg, NOW))
+    assert start.trigger == "comment"

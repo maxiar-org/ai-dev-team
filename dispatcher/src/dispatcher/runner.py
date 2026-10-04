@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import replace
 from collections.abc import Callable
 
 from .board import AddToBoard, plan_board
@@ -20,6 +21,8 @@ from .models import (
     Action,
     ActiveTask,
     AddLabels,
+    BlockedNotice,
+    EscalateConflict,
     FinishTask,
     GitHubOp,
     Item,
@@ -70,6 +73,11 @@ class Dispatcher:
             # Un @openhands también puede venir en una review del PR ("Review changes" → Comment).
             prs = [i.number for i in repo_items if i.kind == "pr"]
             comments += self.github.list_pr_reviews_since(repo, prs, state.comments_since)
+        items = [self._with_merge_state(i) for i in items]
+        for item in items:
+            # El contador de intentos por conflictos se reinicia cuando el PR queda limpio.
+            if item.kind == "pr" and item.mergeable_state not in (None, "dirty", "unknown"):
+                state.conflict_attempts.pop(item.key, None)
 
         actions = decide(items, comments, convs, state, self.cfg, now)
         for action in actions:
@@ -98,6 +106,15 @@ class Dispatcher:
             except Exception as exc:
                 log.warning("No pude actualizar el tablero para %s: %s", getattr(op, "key", None) or op.item.key, exc)
 
+    def _with_merge_state(self, item: Item) -> Item:
+        if item.kind != "pr":
+            return item
+        try:
+            return replace(item, mergeable_state=self.github.get_merge_state(item.repo, item.number))
+        except Exception:
+            log.warning("No pude leer el estado de merge de %s", item.key)
+            return item
+
     def _apply(self, action: Action, state: State, items: list[Item], now: float) -> None:
         if isinstance(action, PauseConversation):
             self.canvas.pause(action.conversation_id)
@@ -107,6 +124,23 @@ class Dispatcher:
             self._finish(action, state, items, now)
         elif isinstance(action, ReleaseOrphan):
             self._release_orphan(action.item)
+        elif isinstance(action, EscalateConflict):
+            item = action.item
+            self.github.add_labels(item.repo, item.number, [LABEL_HUMAN])
+            self.github.comment(
+                item.repo, item.number,
+                "⚠️ El PR sigue con conflictos después de los intentos automáticos de resolución. "
+                "Revísalo, o comenta con @openhands cómo resolverlos.",
+            )
+        elif isinstance(action, BlockedNotice):
+            item = action.item
+            deps = ", ".join(f"#{d}" for d in action.deps)
+            self.github.comment(
+                item.repo, item.number,
+                f"⏸️ Este issue depende de {deps}, que sigue abierto. Arranca solo cuando se cierre. "
+                "Para empezar igual, comenta con @openhands.",
+            )
+            state.blocked_notified[item.key] = list(action.deps)
 
     def _release_orphan(self, item: Item) -> None:
         self.github.remove_label(item.repo, item.number, LABEL_WORKING)
@@ -151,6 +185,9 @@ class Dispatcher:
         )
         if a.comment_id is not None:
             state.processed_comments.add(a.comment_id)
+        if a.trigger == "conflict":
+            state.conflict_attempts[item.key] = state.conflict_attempts.get(item.key, 0) + 1
+        state.blocked_notified.pop(item.key, None)
         self.store.save(state)
         for label in (LABEL_DEV, LABEL_REVIEW, LABEL_FIX, LABEL_HUMAN):
             if label in item.labels:

@@ -7,7 +7,7 @@ from typing import Literal, Union
 
 Kind = Literal["issue", "pr"]
 Role = Literal["dev", "review", "fix"]
-Trigger = Literal["label", "comment"]
+Trigger = Literal["label", "comment", "conflict"]
 
 MENTION = "@openhands"
 LABEL_DEV = "agent:dev"
@@ -45,6 +45,7 @@ class Item:
     labels: frozenset[str]
     head_ref: str | None = None  # rama del PR
     node_id: str = ""  # id GraphQL, para el tablero de Projects
+    mergeable_state: str | None = None  # solo PRs: "dirty" = conflictos con la base
 
     @property
     def key(self) -> str:
@@ -119,7 +120,22 @@ class ReleaseOrphan:
     item: Item
 
 
-Action = Union[StartTask, FinishTask, PauseConversation, ReleaseOrphan]
+@dataclass(frozen=True)
+class EscalateConflict:
+    """El PR sigue con conflictos después de los intentos automáticos."""
+
+    item: Item
+
+
+@dataclass(frozen=True)
+class BlockedNotice:
+    """El issue tiene agent:dev pero depende de issues todavía abiertos."""
+
+    item: Item
+    deps: tuple[int, ...]
+
+
+Action = Union[StartTask, FinishTask, PauseConversation, ReleaseOrphan, EscalateConflict, BlockedNotice]
 
 
 # Operaciones sobre GitHub que outcome_for() pide ejecutar (siempre en el repo de la tarea).

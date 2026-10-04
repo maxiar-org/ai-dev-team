@@ -109,3 +109,11 @@ def test_pr_reviews_since_become_comments_with_negative_ids(gh):
     ])
     comments = gh.list_pr_reviews_since("qr", [11], "2026-10-04T03:31:03+00:00")
     assert [(c.id, c.number, c.author, c.body) for c in comments] == [(-6, 11, "maxiar", "@openhands resolvé los conflictos")]
+
+
+@respx.mock
+def test_get_merge_state(gh):
+    route("GET", "/pulls/11").respond(json={"mergeable_state": "dirty"})
+    route("GET", "/pulls/12").respond(json={"mergeable_state": None})
+    assert gh.get_merge_state("qr", 11) == "dirty"
+    assert gh.get_merge_state("qr", 12) is None

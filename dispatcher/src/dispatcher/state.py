@@ -16,6 +16,8 @@ class State:
     processed_comments: set[int] = field(default_factory=set)
     review_rounds: dict[str, int] = field(default_factory=dict)
     comments_since: str | None = None
+    conflict_attempts: dict[str, int] = field(default_factory=dict)
+    blocked_notified: dict[str, list[int]] = field(default_factory=dict)
 
 
 class StateStore:
@@ -31,6 +33,8 @@ class StateStore:
             processed_comments=set(data.get("processed_comments", [])),
             review_rounds=dict(data.get("review_rounds", {})),
             comments_since=data.get("comments_since"),
+            conflict_attempts=dict(data.get("conflict_attempts", {})),
+            blocked_notified={k: list(v) for k, v in data.get("blocked_notified", {}).items()},
         )
 
     def save(self, state: State) -> None:
@@ -40,6 +44,8 @@ class StateStore:
             "processed_comments": sorted(state.processed_comments),
             "review_rounds": state.review_rounds,
             "comments_since": state.comments_since,
+            "conflict_attempts": state.conflict_attempts,
+            "blocked_notified": state.blocked_notified,
         }
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")

@@ -24,6 +24,7 @@ class FakeGitHub:
         self.review_requests: list[tuple[int, tuple[str, ...]]] = []
         self.fail_add_labels_for: set[int] = set()
         self.fail_request_review = False
+        self.merge_states: dict[int, str | None] = {}
         self.calls = calls if calls is not None else []
 
     def add_item(self, item: Item) -> None:
@@ -42,6 +43,9 @@ class FakeGitHub:
 
     def list_pr_reviews_since(self, repo, numbers, since):
         return [c for c in self.comments if c.repo == repo and c.id < 0 and c.number in numbers]
+
+    def get_merge_state(self, repo, number):
+        return self.merge_states.get(number, "clean")
 
     def get_labels(self, repo, number):
         return self.items[(repo, number)].labels

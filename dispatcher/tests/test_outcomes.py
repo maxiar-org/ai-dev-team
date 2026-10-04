@@ -113,3 +113,9 @@ def test_find_pr_by_branch_or_closes_and_not_by_similar_number():
 def test_trigger_label_is_always_removed(role, kind, trigger_label, status):
     out = outcome_for(task(role, kind, 7), status, "VEREDICTO: APROBADO", frozenset(), None, 0, 2)
     assert RemoveLabel(7, trigger_label) in out.ops
+
+
+
+def test_fix_from_conflict_asks_eduardo_directly():
+    out = outcome_for(task("fix", "pr", 11, trigger="conflict"), "finished", "", frozenset(), None, 0, 2)
+    assert (out.result, out.ops[-1]) == ("fix_aplicado", RequestReview(11))

@@ -188,3 +188,43 @@ def test_review_comment_from_eduardo_triggers_fix(tmp_path, cfg):
     d.run_once()
     [(engine, workdir, prompt)] = cv.created
     assert engine == "codex" and workdir.endswith("pr-11") and "resolvé los conflictos" in prompt
+
+
+
+def test_conflicting_pr_is_fixed_then_sent_to_eduardo(tmp_path, cfg):
+    d, gh, cv, ws, clock = make(tmp_path, cfg)
+    gh.add_item(Item(REPO, 12, "pr", "Diseño", "", frozenset({"engine:claude"}), "agent/4-diseno"))
+    gh.merge_states[12] = "dirty"
+    d.run_once()
+    [(engine, workdir, prompt)] = cv.created
+    assert engine == "claude" and workdir.endswith("pr-12") and "conflictos" in prompt
+    assert StateStore(cfg.state_path).load().conflict_attempts == {f"{REPO}#12": 1}
+    cv.status["conv1"] = "finished"
+    gh.merge_states[12] = "clean"
+    d.run_once()
+    assert gh.review_requests == [(12, ("maxiar",))]
+    assert StateStore(cfg.state_path).load().conflict_attempts == {}
+
+
+def test_conflict_that_keeps_failing_escalates(tmp_path, cfg):
+    d, gh, cv, ws, clock = make(tmp_path, cfg)
+    gh.add_item(Item(REPO, 12, "pr", "Diseño", "", frozenset({"engine:codex"}), "agent/4-diseno"))
+    gh.merge_states[12] = "dirty"
+    for conv in ("conv1", "conv2"):
+        d.run_once()
+        cv.status[conv] = "finished"
+        d.run_once()  # termina; te pide review; sigue con conflictos
+    d.run_once()
+    assert len(cv.created) == 2
+    assert "needs:human" in gh.labels(12)
+    assert "conflictos" in gh.posted[-1][1]
+
+
+def test_blocked_issue_gets_a_single_notice(tmp_path, cfg):
+    d, gh, cv, ws, clock = make(tmp_path, cfg)
+    gh.add_item(Item(REPO, 5, "issue", "Guardar", "Depende de #4", frozenset({"agent:dev"})))
+    gh.add_item(Item(REPO, 4, "issue", "Diseño", "", frozenset()))
+    d.run_once()
+    d.run_once()
+    assert cv.created == []
+    assert len(gh.posted) == 1 and "#4" in gh.posted[0][1]

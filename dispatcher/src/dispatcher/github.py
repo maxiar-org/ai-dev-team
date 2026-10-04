@@ -127,6 +127,12 @@ class GitHubClient:
         )
         resp.raise_for_status()
 
+    def get_merge_state(self, repo: str, number: int) -> str | None:
+        """mergeable_state del PR ("dirty" = conflictos; None mientras GitHub lo calcula)."""
+        resp = self.http.get(f"{self._repo(repo)}/pulls/{number}")
+        resp.raise_for_status()
+        return resp.json().get("mergeable_state")
+
     def is_merged(self, repo: str, number: int) -> bool:
         resp = self.http.get(f"{self._repo(repo)}/pulls/{number}")
         resp.raise_for_status()

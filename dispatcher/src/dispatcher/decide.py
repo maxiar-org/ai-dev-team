@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 
 from .config import Config
@@ -13,8 +14,10 @@ from .models import (
     LABEL_WORKING,
     MENTION,
     Action,
+    BlockedNotice,
     Comment,
     ConvInfo,
+    EscalateConflict,
     FinishTask,
     Item,
     PauseConversation,
@@ -29,6 +32,25 @@ from .state import State
 DONE_STATUSES = frozenset({"finished", "error", "stuck"})
 # Estados que solo cuentan como terminados después del período de gracia.
 STALL_STATUSES = frozenset({"idle", "waiting_for_confirmation", "paused"})
+MAX_CONFLICT_ATTEMPTS = 2
+CONFLICT_INSTRUCTION = (
+    "Este PR tiene conflictos con la rama base. Hacé `git fetch origin` y mergeá `origin/main` en "
+    "esta rama, resolvé los conflictos preservando la funcionalidad de ambos lados, corré las "
+    "verificaciones de AGENTS.md y pusheá. No cambies nada más."
+)
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+_DEPENDS_LINE = re.compile(r"(?im)^.*\b(?:depende de|depends on|bloqueado por|blocked by)\b.*$")
+
+
+def parse_dependencies(body: str) -> tuple[int, ...]:
+    """Números de issue en líneas tipo "Depende de #4 y #6" (ignora comentarios HTML)."""
+    text = _HTML_COMMENT.sub("", body or "")
+    numbers: list[int] = []
+    for line in _DEPENDS_LINE.findall(text):
+        for n in re.findall(r"#(\d+)", line):
+            if int(n) not in numbers:
+                numbers.append(int(n))
+    return tuple(numbers)
 
 
 def decide(
@@ -63,7 +85,30 @@ def decide(
         if LABEL_WORKING in item.labels and item.key not in busy_items:
             actions.append(ReleaseOrphan(item))
             started_items.add(item.key)
-    candidates = [*_comment_candidates(items, comments, state, cfg), *_label_candidates(items, cfg)]
+    open_issues = {(i.repo, i.number) for i in items if i.kind == "issue"}
+    label_candidates = []
+    for candidate in _label_candidates(items, cfg):
+        deps = ()
+        if candidate.role == "dev":
+            deps = tuple(d for d in parse_dependencies(candidate.item.body) if (candidate.item.repo, d) in open_issues)
+        if deps:
+            if state.blocked_notified.get(candidate.item.key) != list(deps):
+                actions.append(BlockedNotice(candidate.item, deps))
+            continue
+        label_candidates.append(candidate)
+    conflict_candidates = []
+    for item in items:
+        if item.kind != "pr" or item.mergeable_state != "dirty":
+            continue
+        if item.labels & {LABEL_WORKING, LABEL_HUMAN, LABEL_REVIEW, LABEL_FIX} or item.key in busy_items:
+            continue
+        if state.conflict_attempts.get(item.key, 0) >= MAX_CONFLICT_ATTEMPTS:
+            actions.append(EscalateConflict(item))
+            started_items.add(item.key)
+            continue
+        engine = engine_from_labels(item.labels, cfg.default_dev_engine)
+        conflict_candidates.append(StartTask(item, "fix", engine, "conflict", CONFLICT_INSTRUCTION))
+    candidates = [*_comment_candidates(items, comments, state, cfg), *conflict_candidates, *label_candidates]
     for candidate in candidates:
         key = candidate.item.key
         if candidate.engine in busy_engines or key in busy_items or key in started_items:
