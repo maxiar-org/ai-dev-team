@@ -21,6 +21,7 @@ services:
       GH_TOKEN: ${GITHUB_TOKEN:?falta GITHUB_TOKEN en .env}
     volumes:
       - canvas-state:/home/openhands/.openhands
+      - codex-home:/home/openhands/.codex
       - projects:/projects
 
   dispatcher:
@@ -49,5 +50,6 @@ services:
 
 volumes:
   canvas-state:
+  codex-home:
   projects:
   dispatcher-state:

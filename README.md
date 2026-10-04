@@ -32,9 +32,10 @@ docker compose logs -f dispatcher
 
 - **Claude (cuenta Pro del piloto):**
   1. En una ventana de incógnito, con sesión iniciada **solo** en la cuenta Pro, ejecuta:
-     `docker run --rm -it node:22-slim sh -c "npm i -g @anthropic-ai/claude-code >/dev/null && claude setup-token"`
+     `docker run --rm -it node:22-slim sh -c "apt-get update -qq >/dev/null && apt-get install -y -qq ca-certificates >/dev/null && npm i -g @anthropic-ai/claude-code >/dev/null && claude setup-token"`
   2. Abre la URL que imprime en esa ventana.
-  3. Pega el token en `CLAUDE_CODE_OAUTH_TOKEN`. Dura 1 año.
+  3. El navegador muestra un **código**: pégalo de vuelta en la terminal.
+  4. La terminal imprime el token final (`sk-ant-oat01-…`). Ese va en `CLAUDE_CODE_OAUTH_TOKEN`. Dura 1 año.
 - **Codex (ChatGPT):**
   1. Habilita el login por código de dispositivo en la configuración de seguridad de ChatGPT.
   2. Ejecuta (la imagen slim no trae certificados raíz, por eso se instala `ca-certificates`):
@@ -58,5 +59,5 @@ docker compose logs -f dispatcher
 
 ## Problemas conocidos
 
-- **Codex deja de autenticar después de reiniciar el contenedor:** el `auth.json` de `.env` puede haber rotado. Regenéralo (ver Credenciales).
+- **Codex deja de autenticar:** el login vive en el volumen `codex-home` y se crea desde `CODEX_AUTH_JSON` solo la primera vez. Para usar un login nuevo: actualiza `.env`, ejecuta `docker compose down`, luego `docker volume rm ai-dev-team_codex-home`, y por último `docker compose up -d`.
 - **En la mini-PC (Linux), `./pilot` tiene que poder escribirlo el UID 10001:** `sudo chown 10001:10001 pilot`.

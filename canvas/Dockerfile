@@ -23,9 +23,14 @@ RUN git clone --depth 1 --branch "${FLUTTER_CHANNEL}" https://github.com/flutter
  && ln -s /opt/flutter/bin/flutter /usr/local/bin/flutter \
  && ln -s /opt/flutter/bin/dart /usr/local/bin/dart
 
+COPY --chmod=755 init-credentials.sh /usr/local/bin/init-credentials.sh
+RUN mkdir -p /home/openhands/.codex && chown openhands:openhands /home/openhands/.codex
+
 USER openhands
 ENV PATH="/opt/flutter/bin:${PATH}"
 RUN flutter config --no-analytics \
  && dart --disable-analytics \
  && flutter precache --web \
  && flutter --version
+
+ENTRYPOINT ["/usr/local/bin/init-credentials.sh"]
