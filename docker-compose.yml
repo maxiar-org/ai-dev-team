@@ -9,6 +9,9 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       LOCAL_BACKEND_API_KEY: ${CANVAS_API_KEY:?falta CANVAS_API_KEY en .env}
+      # El entrypoint solo exporta esta variable si LOCAL_BACKEND_API_KEY está vacía;
+      # sin ella el agent server acepta pedidos sin clave.
+      OH_SESSION_API_KEYS_0: ${CANVAS_API_KEY}
       OH_SECRET_KEY: ${OH_SECRET_KEY:?falta OH_SECRET_KEY en .env}
       AGENT_CANVAS_DISABLE_TELEMETRY: "1"
       # Suscripciones (opción C del spec). Para el respaldo pagado ver README.
