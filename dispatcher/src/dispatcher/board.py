@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from .models import LABEL_DEV, LABEL_HUMAN, LABEL_WORKING, Item
+from .outcomes import find_pr_for_issue
 
 BACKLOG = "Backlog"
 READY = "Listo para agentes"
@@ -43,9 +44,15 @@ def column_for(item: Item) -> str:
 def plan_board(
     items: Iterable[Item], current: Mapping[str, tuple[str, str | None]]
 ) -> list[AddToBoard | SetColumn]:
+    items = list(items)
     ops: list[AddToBoard | SetColumn] = []
     for item in sorted(items, key=lambda i: (i.repo, i.number)):
         column = column_for(item)
+        if item.kind == "issue" and column in (BACKLOG, READY):
+            # Un issue que ya tiene PR abierto avanza junto con su PR.
+            pr = find_pr_for_issue(items, item.repo, item.number)
+            if pr is not None:
+                column = column_for(pr)
         entry = current.get(item.key)
         if entry is None:
             ops.append(AddToBoard(item, column))

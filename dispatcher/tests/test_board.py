@@ -50,3 +50,17 @@ def test_plan_board_adds_missing_items_and_fixes_stale_columns():
 
 def test_plan_board_sets_column_when_item_has_none():
     assert plan_board([issue(2)], {"qr#2": ("PVTI_2", None)}) == [SetColumn("PVTI_2", "qr#2", BACKLOG)]
+
+
+def test_issue_with_open_pr_follows_its_pr_column():
+    issue2 = issue(2)
+    pr10 = Item("qr", 10, "pr", "PR", "Closes #2", frozenset({"needs:human"}), "agent/2-wa", node_id="PR_10")
+    current = {"qr#2": ("PVTI_2", BACKLOG), "qr#10": ("PVTI_10", NEEDS_HUMAN)}
+    assert plan_board([issue2, pr10], current) == [SetColumn("PVTI_2", "qr#2", NEEDS_HUMAN)]
+
+
+def test_issue_with_open_pr_in_review_is_in_review():
+    pr11 = Item("qr", 11, "pr", "PR", "", frozenset({"engine:codex"}), "agent/3-instagram", node_id="PR_11")
+    assert plan_board([issue(3), pr11], {"qr#3": ("PVTI_3", BACKLOG), "qr#11": ("PVTI_11", IN_REVIEW)}) == [
+        SetColumn("PVTI_3", "qr#3", IN_REVIEW)
+    ]
