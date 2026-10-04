@@ -19,7 +19,7 @@ def issue(n, *labels):
 
 
 def pr(n, *labels):
-    return Item("qr", n, "pr", "PR", "", frozenset(labels), "agent/1-x", node_id=f"PR_{n}")
+    return Item("qr", n, "pr", "PR", "", frozenset(labels), "feature/x", node_id=f"PR_{n}")
 
 
 @pytest.mark.parametrize(
