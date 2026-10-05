@@ -43,3 +43,12 @@ def test_project_number_is_optional():
     assert Config.from_env({**BASE, "PROJECT_NUMBER": "1"}).project_number == 1
     with pytest.raises(ConfigError, match="PROJECT_NUMBER"):
         Config.from_env({**BASE, "PROJECT_NUMBER": "x"})
+
+
+def test_phase2_engines_and_docs_only_repos():
+    cfg = Config.from_env(BASE)
+    assert (cfg.qa_engine, cfg.docs_engine, cfg.docs_only_repos) == ("codex", "claude", ())
+    cfg = Config.from_env({**BASE, "QA_ENGINE": "claude", "DOCS_ENGINE": "codex", "DOCS_ONLY_REPOS": "ai-dev-team, x"})
+    assert (cfg.qa_engine, cfg.docs_engine, cfg.docs_only_repos) == ("claude", "codex", ("ai-dev-team", "x"))
+    with pytest.raises(ConfigError, match="QA_ENGINE"):
+        Config.from_env({**BASE, "QA_ENGINE": "gemini"})

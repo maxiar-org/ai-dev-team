@@ -18,6 +18,8 @@ class State:
     comments_since: str | None = None
     conflict_attempts: dict[str, int] = field(default_factory=dict)
     blocked_notified: dict[str, list[int]] = field(default_factory=dict)
+    qa_rounds: dict[str, int] = field(default_factory=dict)
+    docs_only_notified: set[str] = field(default_factory=set)
 
 
 class StateStore:
@@ -35,6 +37,8 @@ class StateStore:
             comments_since=data.get("comments_since"),
             conflict_attempts=dict(data.get("conflict_attempts", {})),
             blocked_notified={k: list(v) for k, v in data.get("blocked_notified", {}).items()},
+            qa_rounds=dict(data.get("qa_rounds", {})),
+            docs_only_notified=set(data.get("docs_only_notified", [])),
         )
 
     def save(self, state: State) -> None:
@@ -46,6 +50,8 @@ class StateStore:
             "comments_since": state.comments_since,
             "conflict_attempts": state.conflict_attempts,
             "blocked_notified": state.blocked_notified,
+            "qa_rounds": state.qa_rounds,
+            "docs_only_notified": sorted(state.docs_only_notified),
         }
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")

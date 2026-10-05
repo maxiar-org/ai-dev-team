@@ -39,6 +39,9 @@ class Config:
     idle_grace_seconds: int = 120
     default_dev_engine: str = "codex"
     project_number: int | None = None
+    qa_engine: str = "codex"
+    docs_engine: str = "claude"
+    docs_only_repos: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -68,9 +71,13 @@ class Config:
                 raise ConfigError(f"{name} debe ser mayor que 0")
             return value
 
-        engine = env.get("DEFAULT_DEV_ENGINE", "").strip() or "codex"
-        if engine not in ENGINES:
-            raise ConfigError(f"DEFAULT_DEV_ENGINE debe ser uno de {ENGINES}, no {engine!r}")
+        def engine_var(name: str, default: str) -> str:
+            value = env.get(name, "").strip() or default
+            if value not in ENGINES:
+                raise ConfigError(f"{name} debe ser uno de {ENGINES}, no {value!r}")
+            return value
+
+        engine = engine_var("DEFAULT_DEV_ENGINE", "codex")
 
         return cls(
             github_token=required("GITHUB_TOKEN"),
@@ -90,4 +97,7 @@ class Config:
             idle_grace_seconds=integer("IDLE_GRACE_SECONDS", 120),
             default_dev_engine=engine,
             project_number=integer("PROJECT_NUMBER", 0) or None,
+            qa_engine=engine_var("QA_ENGINE", "codex"),
+            docs_engine=engine_var("DOCS_ENGINE", "claude"),
+            docs_only_repos=tuple(r.strip() for r in env.get("DOCS_ONLY_REPOS", "").split(",") if r.strip()),
         )

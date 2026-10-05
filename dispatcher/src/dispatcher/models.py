@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Literal, Union
 
 Kind = Literal["issue", "pr"]
-Role = Literal["dev", "review", "fix"]
+Role = Literal["dev", "review", "fix", "qa", "docs"]
 Trigger = Literal["label", "comment", "conflict"]
 
 MENTION = "@openhands"
@@ -15,6 +15,8 @@ LABEL_WORKING = "agent:working"
 LABEL_REVIEW = "agent:review"
 LABEL_FIX = "agent:fix"
 LABEL_HUMAN = "needs:human"
+LABEL_QA = "agent:qa"
+LABEL_DOCS = "agent:docs"
 
 
 def item_key(repo: str, number: int) -> str:
@@ -135,7 +137,16 @@ class BlockedNotice:
     deps: tuple[int, ...]
 
 
-Action = Union[StartTask, FinishTask, PauseConversation, ReleaseOrphan, EscalateConflict, BlockedNotice]
+@dataclass(frozen=True)
+class DocsOnlyNotice:
+    """agent:dev en un repo de solo documentación: no arranca y se avisa una vez."""
+
+    item: Item
+
+
+Action = Union[
+    StartTask, FinishTask, PauseConversation, ReleaseOrphan, EscalateConflict, BlockedNotice, DocsOnlyNotice
+]
 
 
 # Operaciones sobre GitHub que outcome_for() pide ejecutar (siempre en el repo de la tarea).

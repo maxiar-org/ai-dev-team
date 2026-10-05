@@ -16,6 +16,8 @@ def test_roundtrip_is_lossless_and_atomic(tmp_path):
         comments_since="2026-10-03T00:00:00+00:00",
         conflict_attempts={"qr#11": 1},
         blocked_notified={"qr#5": [4]},
+        qa_rounds={"qr#12": 1},
+        docs_only_notified={"ai-dev-team#3"},
     )
     store.save(state)
     assert store.load() == state
