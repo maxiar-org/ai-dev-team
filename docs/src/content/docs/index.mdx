@@ -1,0 +1,40 @@
+---
+title: AI Dev Team
+description: El framework de agentes de IA que desarrolla sobre los repos de maxiar-org.
+template: splash
+hero:
+  tagline: Un equipo de agentes de IA que toma issues de GitHub, implementa, se revisa entre sí, prueba el comportamiento y te deja el PR listo para aprobar.
+  actions:
+    - text: Qué es AI Dev Team
+      link: /ai-dev-team/guia/que-es-ai-dev-team/
+      icon: right-arrow
+    - text: El flujo del equipo
+      link: /ai-dev-team/guia/flujo-del-equipo/
+      icon: right-arrow
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+	<Card title="Qué es" icon="rocket">
+		El objetivo del proyecto y la arquitectura: OpenHands Canvas como runtime, un dispatcher propio como
+		orquestador y GitHub como fuente de verdad. Ver [Qué es AI Dev Team](/ai-dev-team/guia/que-es-ai-dev-team/).
+	</Card>
+	<Card title="El flujo" icon="right-arrow">
+		Cómo viaja un issue de `agent:dev` a un PR mergeado: dev, reviewer, QA, fix, conflictos y
+		dependencias. Ver [El flujo del equipo](/ai-dev-team/guia/flujo-del-equipo/).
+	</Card>
+	<Card title="Roles" icon="puzzle">
+		Qué hace cada agente (dev, reviewer, QA, docs, fix), con qué motor y qué no hace. Ver [Roles](/ai-dev-team/guia/roles/).
+	</Card>
+	<Card title="Operación" icon="setting">
+		Cómo arrancar el equipo, las credenciales, las métricas y cómo sumar un proyecto nuevo. Ver [Operación](/ai-dev-team/guia/operacion/).
+	</Card>
+	<Card title="Labels y tablero" icon="list-format">
+		Los labels que mueven el flujo y las columnas del Kanban. Ver [Labels y tablero](/ai-dev-team/guia/labels-y-tablero/).
+	</Card>
+	<Card title="Lecciones del piloto" icon="seti:markdown">
+		Qué resultó, qué se rompió y cómo se corrigió en el fin de semana del piloto. Ver [Lecciones del piloto](/ai-dev-team/piloto/lecciones/).
+	</Card>
+</CardGrid>
