@@ -95,7 +95,7 @@ class Dispatcher:
 
     def _sync_board(self, items: list[Item]) -> None:
         # Usa los labels del inicio del ciclo: los cambios de este ciclo se reflejan en el siguiente.
-        for op in plan_board(items, self.board.load()):
+        for op in plan_board(items, self.board.load(), self.cfg.repos):
             try:
                 if isinstance(op, AddToBoard):
                     if not op.item.node_id:

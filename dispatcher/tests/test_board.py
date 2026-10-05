@@ -2,6 +2,7 @@ import pytest
 
 from dispatcher.board import (
     BACKLOG,
+    DONE,
     IN_PROGRESS,
     IN_REVIEW,
     NEEDS_HUMAN,
@@ -63,4 +64,15 @@ def test_issue_with_open_pr_in_review_is_in_review():
     pr11 = Item("qr", 11, "pr", "PR", "", frozenset({"engine:codex"}), "agent/3-instagram", node_id="PR_11")
     assert plan_board([issue(3), pr11], {"qr#3": ("PVTI_3", BACKLOG), "qr#11": ("PVTI_11", IN_REVIEW)}) == [
         SetColumn("PVTI_3", "qr#3", IN_REVIEW)
+    ]
+
+
+def test_closed_items_of_watched_repos_go_to_done():
+    current = {
+        "qr#7": ("PVTI_7", IN_REVIEW),  # cerrado: ya no está entre los abiertos
+        "qr#1": ("PVTI_1", DONE),  # cerrado y ya en Hecho
+        "otro#3": ("PVTI_O", IN_REVIEW),  # repo que el dispatcher no atiende
+    }
+    assert plan_board([issue(2)], {**current, "qr#2": ("PVTI_2", BACKLOG)}, repos=("qr",)) == [
+        SetColumn("PVTI_7", "qr#7", DONE)
     ]

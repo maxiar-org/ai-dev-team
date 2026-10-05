@@ -13,7 +13,9 @@ READY = "Listo para agentes"
 IN_PROGRESS = "En curso"
 IN_REVIEW = "En review"
 NEEDS_HUMAN = "Necesita a Eduardo"
-# "Hecho" lo asigna la automatización nativa del tablero al cerrar o mergear.
+# La automatización nativa del tablero también pone "Hecho" al cerrar o mergear, pero el
+# dispatcher puede pisarla con datos del inicio del ciclo; por eso lo asegura él mismo.
+DONE = "Hecho"
 
 
 @dataclass(frozen=True)
@@ -42,8 +44,12 @@ def column_for(item: Item) -> str:
 
 
 def plan_board(
-    items: Iterable[Item], current: Mapping[str, tuple[str, str | None]]
+    items: Iterable[Item],
+    current: Mapping[str, tuple[str, str | None]],
+    repos: Iterable[str] | None = None,
 ) -> list[AddToBoard | SetColumn]:
+    """repos: repos que atiende el dispatcher. Sus items del tablero que ya no están abiertos
+    (cerrados o mergeados) pasan a Hecho. Los de otros repos no se tocan."""
     items = list(items)
     ops: list[AddToBoard | SetColumn] = []
     for item in sorted(items, key=lambda i: (i.repo, i.number)):
@@ -58,4 +64,10 @@ def plan_board(
             ops.append(AddToBoard(item, column))
         elif entry[1] != column:
             ops.append(SetColumn(entry[0], item.key, column))
+    if repos is not None:
+        watched = set(repos)
+        open_keys = {i.key for i in items}
+        for key, (board_id, column) in sorted(current.items()):
+            if key.split("#", 1)[0] in watched and key not in open_keys and column != DONE:
+                ops.append(SetColumn(board_id, key, DONE))
     return ops
