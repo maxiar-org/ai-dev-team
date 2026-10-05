@@ -22,6 +22,7 @@ from .models import (
     ActiveTask,
     AddLabels,
     BlockedNotice,
+    DocsOnlyNotice,
     EscalateConflict,
     FinishTask,
     GitHubOp,
@@ -132,6 +133,14 @@ class Dispatcher:
                 "⚠️ El PR sigue con conflictos después de los intentos automáticos de resolución. "
                 "Revísalo, o comenta con @openhands cómo resolverlos.",
             )
+        elif isinstance(action, DocsOnlyNotice):
+            item = action.item
+            self.github.comment(
+                item.repo, item.number,
+                "ℹ️ Este repo es de **solo documentación**: los agentes no cambian código acá, así que "
+                "`agent:dev` no arranca. Si es una tarea de documentación, usá `agent:docs`.",
+            )
+            state.docs_only_notified.add(item.key)
         elif isinstance(action, BlockedNotice):
             item = action.item
             deps = ", ".join(f"#{d}" for d in action.deps)
@@ -213,6 +222,7 @@ class Dispatcher:
         outcome = outcome_for(
             task, a.status, final, labels, pr,
             state.review_rounds.get(task.key, 0), self.cfg.max_review_rounds,
+            qa_rounds=state.qa_rounds.get(task.key, 0),
         )
         failed = []
         for op in outcome.ops:
@@ -233,6 +243,7 @@ class Dispatcher:
                 log.exception("Tampoco pude escalar %s", task.key)
         # Siempre se libera la tarea: si no, su motor queda bloqueado para siempre.
         state.review_rounds[task.key] = outcome.review_rounds
+        state.qa_rounds[task.key] = outcome.qa_rounds
         self.metrics.append(task, a.status, outcome.result, a.conv, now)
         state.active.pop(task.key, None)
         log.info("Terminó %s %s: %s (%s)", task.role, task.key, outcome.result, a.status)

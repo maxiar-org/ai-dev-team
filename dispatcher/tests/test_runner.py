@@ -120,16 +120,15 @@ def test_timeout_pauses_and_escalates(tmp_path, cfg):
 
 def test_github_failure_while_finishing_frees_the_engine(tmp_path, cfg):
     d, gh, cv, ws, clock = make(tmp_path, cfg)
-    gh.add_item(Item(REPO, 7, "pr", "WA", "", frozenset({"agent:review", "engine:codex"}), "agent/3-wa"))
+    gh.add_item(Item(REPO, 7, "pr", "WA", "", frozenset({"agent:qa", "engine:codex"}), "agent/3-wa"))
     d.run_once()
     cv.status["conv1"] = "finished"
-    cv.responses["conv1"] = "VEREDICTO: APROBADO"
+    cv.responses["conv1"] = "QA: OK"
     gh.fail_request_review = True
     d.run_once()
     assert StateStore(cfg.state_path).load().active == {}
     assert len(MetricsLog(cfg.metrics_path).read()) == 1
     assert "needs:human" in gh.labels(7)
-
 
 def test_final_response_is_redacted_before_posting(tmp_path, cfg):
     d, gh, cv, ws, clock = make(tmp_path, cfg)
@@ -210,11 +209,11 @@ def test_conflict_that_keeps_failing_escalates(tmp_path, cfg):
     d, gh, cv, ws, clock = make(tmp_path, cfg)
     gh.add_item(Item(REPO, 12, "pr", "Diseño", "", frozenset({"engine:codex"}), "agent/4-diseno"))
     gh.merge_states[12] = "dirty"
-    for _ in range(12):  # fix → review aprobada → sigue con conflictos → otro fix → ... → escala
+    for _ in range(20):  # fix → review aprobada → QA OK → sigue con conflictos → otro fix → ... → escala
         d.run_once()
         for conv_id in cv.status:
             cv.status[conv_id] = "finished"
-            cv.responses[conv_id] = "VEREDICTO: APROBADO"
+            cv.responses[conv_id] = "VEREDICTO: APROBADO\nQA: OK"
         if "needs:human" in gh.labels(12):
             break
     fixes = [m for _, _, m in cv.created if "conflictos con la rama base" in m]
@@ -230,3 +229,30 @@ def test_blocked_issue_gets_a_single_notice(tmp_path, cfg):
     d.run_once()
     assert cv.created == []
     assert len(gh.posted) == 1 and "#4" in gh.posted[0][1]
+
+
+def test_review_then_qa_failure_then_fix_then_qa_ok(tmp_path, cfg):
+    d, gh, cv, ws, clock = make(tmp_path, cfg)
+    gh.add_item(Item(REPO, 7, "pr", "WA", "", frozenset({"agent:review", "engine:codex"}), "agent/3-wa"))
+    script = ["VEREDICTO: APROBADO", "Falta el campo.\nQA: FALLA", "Corregido.", "VEREDICTO: APROBADO", "QA: OK"]
+    for response in script:
+        d.run_once()  # inicia la tarea siguiente
+        conv_id = f"conv{len(cv.created)}"
+        cv.status[conv_id] = "finished"
+        cv.responses[conv_id] = response
+        d.run_once()  # la cierra
+    assert gh.review_requests == [(7, ("maxiar",))]
+    assert StateStore(cfg.state_path).load().qa_rounds == {f"{REPO}#7": 1}
+    assert len(cv.created) == 5
+
+
+def test_docs_only_repo_notice_is_posted_once(tmp_path, cfg):
+    import dataclasses
+
+    cfg2 = dataclasses.replace(cfg, docs_only_repos=(REPO,))
+    d, gh, cv, ws, clock = make(tmp_path, cfg2)
+    gh.add_item(Item(REPO, 3, "issue", "Código", "", frozenset({"agent:dev"})))
+    d.run_once()
+    d.run_once()
+    assert cv.created == []
+    assert len(gh.posted) == 1 and "documentación" in gh.posted[0][1]

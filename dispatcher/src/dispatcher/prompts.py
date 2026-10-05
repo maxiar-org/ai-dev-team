@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .models import Item, Role
 
-ROLE_FILES: dict[str, str] = {"dev": "dev.md", "review": "reviewer.md", "fix": "fix.md"}
+ROLE_FILES: dict[str, str] = {"dev": "dev.md", "review": "reviewer.md", "fix": "fix.md", "qa": "qa.md", "docs": "docs.md"}
 PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 
 

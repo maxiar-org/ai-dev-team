@@ -16,7 +16,7 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}**
 2. Lee el issue completo y sus comentarios: `gh issue view {{number}} --repo {{org}}/{{repo}} --comments`.
 3. Si la rama `{{branch}}` ya existe en origin, continúa sobre ella (`git fetch origin && git checkout {{branch}}`). Si no existe, créala: `git checkout -b {{branch}}`.
 4. Trabaja con TDD: primero un test que falle, después el código mínimo para que pase y por último el refactor. Haz commits pequeños con mensajes en español.
-5. Antes de abrir el PR, deben pasar los comandos de verificación que indica `AGENTS.md` (en Flutter: `flutter analyze` y `flutter test`). Si el cambio es visual y tienes herramientas de Playwright, levanta la UI como indica `AGENTS.md`, recorre el flujo y comprueba que también sigan funcionando los flujos que ya existían.
+5. Antes de abrir el PR, deben pasar los comandos de verificación que indica `AGENTS.md` (en Flutter: `flutter analyze` y `flutter test`).
 6. Sube la rama y abre el PR: `git push -u origin {{branch}}` y luego `gh pr create --repo {{org}}/{{repo}} --head {{branch}} --title "<título>" --body-file <archivo>`.
    El cuerpo del PR debe incluir:
    - `Closes #{{number}}`;

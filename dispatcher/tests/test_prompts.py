@@ -34,3 +34,17 @@ def test_fix_prompt_without_instruction_says_so(cfg):
 def test_user_text_with_braces_is_not_expanded(cfg):
     item = Item("qr-generator", 3, "issue", "T", "literal {{branch}}", frozenset())
     assert "literal {{branch}}" in build_prompt(cfg.roles_dir, "dev", item, "maxiar-org")
+
+
+def test_qa_prompt_has_verdicts_and_evidence_branch(cfg):
+    item = Item("qr-generator", 7, "pr", "WA", "Closes #3", frozenset(), "agent/3-wa")
+    text = build_prompt(cfg.roles_dir, "qa", item, "maxiar-org")
+    assert "QA: OK" in text and "QA: FALLA" in text and "QA: N/A" in text
+    assert "qa-evidence" in text and "agent/3-wa" in text and "{{" not in text
+
+
+def test_docs_prompt_mentions_starlight_and_pages(cfg):
+    item = Item("ai-dev-team", 4, "issue", "Sitio de docs", "Crear el sitio", frozenset())
+    text = build_prompt(cfg.roles_dir, "docs", item, "maxiar-org")
+    assert "Starlight" in text and "GitHub Pages" in text and "/ai-dev-team/" in text
+    assert "agent/4-sitio-de-docs" in text and "{{" not in text
