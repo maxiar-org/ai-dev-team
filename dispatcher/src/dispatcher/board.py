@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-from .models import LABEL_DEV, LABEL_HUMAN, LABEL_WORKING, Item
+from .models import LABEL_DEV, LABEL_DOCS, LABEL_HUMAN, LABEL_WORKING, Item
 from .outcomes import find_pr_for_issue
 
 BACKLOG = "Backlog"
@@ -38,7 +38,7 @@ def column_for(item: Item) -> str:
         return IN_PROGRESS
     if item.kind == "pr":
         return IN_REVIEW
-    if LABEL_DEV in item.labels:
+    if LABEL_DEV in item.labels or LABEL_DOCS in item.labels:
         return READY
     return BACKLOG
 

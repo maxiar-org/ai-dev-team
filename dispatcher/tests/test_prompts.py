@@ -48,3 +48,23 @@ def test_docs_prompt_mentions_starlight_and_pages(cfg):
     text = build_prompt(cfg.roles_dir, "docs", item, "maxiar-org")
     assert "Starlight" in text and "GitHub Pages" in text and "/ai-dev-team/" in text
     assert "agent/4-sitio-de-docs" in text and "{{" not in text
+
+
+def test_reviewer_allows_docs_workflow_in_docs_only_repos(cfg):
+    item = Item("ai-dev-team", 9, "pr", "Docs", "", frozenset(), "agent/4-docs")
+    text = build_prompt(cfg.roles_dir, "review", item, "maxiar-org")
+    assert ".github/workflows/docs.yml" in text
+
+
+def test_qa_evidence_commands_use_unique_worktree_and_no_blanket_ignore(cfg):
+    item = Item("qr-generator", 7, "pr", "WA", "", frozenset(), "agent/3-wa")
+    text = build_prompt(cfg.roles_dir, "qa", item, "maxiar-org")
+    assert "mktemp -d" in text and "git worktree prune" in text and "worktree remove --force" in text
+    assert "/tmp/qa-evidence" not in text and "|| true)" not in text
+
+
+def test_docs_prompt_covers_first_install_mermaid_and_pages_permissions(cfg):
+    item = Item("qr-generator", 21, "issue", "Docs", "", frozenset())
+    text = build_prompt(cfg.roles_dir, "docs", item, "maxiar-org")
+    assert "npm install" in text and "astro-mermaid" in text
+    assert "pages: write" in text and "id-token: write" in text and "working-directory: docs" in text

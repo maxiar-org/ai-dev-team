@@ -13,16 +13,30 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}** (rama `{{bra
 3. Si el PR no tiene cambios visibles para la persona usuaria (por ejemplo, solo documentación de texto o configuración), responde `QA: N/A` con una línea que explique por qué y termina.
 4. Escribe un **plan de prueba numerado**: un paso por cada criterio de aceptación, más los flujos principales de `AGENTS.md` (regresión).
 5. Compila y sirve la app como indica `AGENTS.md` y ejecuta el plan con las herramientas de Playwright. Toma una captura en cada paso relevante.
-6. **Evidencia:** sube las capturas a la rama `qa-evidence` (huérfana; créala si no existe), en `pr-{{number}}/ronda-<n>/`, donde `<n>` es 1 más la cantidad de rondas anteriores que ya estén en esa carpeta:
+6. **Evidencia:** sube las capturas a la rama huérfana `qa-evidence`, en `pr-{{number}}/ronda-<n>/`. Usa siempre una carpeta temporal **nueva**: el contenedor es compartido con otras tareas. Copia las capturas en `$CAPTURAS` y ejecuta:
 
    ```bash
-   git fetch origin qa-evidence || true
-   git worktree add /tmp/qa-evidence origin/qa-evidence 2>/dev/null || (git worktree add --detach /tmp/qa-evidence && git -C /tmp/qa-evidence checkout --orphan qa-evidence && git -C /tmp/qa-evidence rm -rf . >/dev/null 2>&1 || true)
-   # copiá las capturas a /tmp/qa-evidence/pr-{{number}}/ronda-<n>/
-   git -C /tmp/qa-evidence add -A && git -C /tmp/qa-evidence commit -m "QA PR #{{number}} ronda <n>" && git -C /tmp/qa-evidence push origin HEAD:qa-evidence
+   set -e
+   EV=$(mktemp -d)
+   git worktree prune
+   if git ls-remote --exit-code --heads origin qa-evidence >/dev/null 2>&1; then
+     git fetch -q origin qa-evidence
+     git worktree add -q --detach "$EV" FETCH_HEAD
+   else
+     git worktree add -q --detach "$EV"
+     git -C "$EV" checkout -q --orphan qa-evidence
+     git -C "$EV" rm -rq --cached . >/dev/null 2>&1 || true
+     find "$EV" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+   fi
+   R=$(( $(ls -d "$EV/pr-{{number}}"/ronda-* 2>/dev/null | wc -l) + 1 ))
+   mkdir -p "$EV/pr-{{number}}/ronda-$R" && cp "$CAPTURAS"/*.png "$EV/pr-{{number}}/ronda-$R/"
+   git -C "$EV" add -A && git -C "$EV" commit -q -m "QA PR #{{number}} ronda $R"
+   git -C "$EV" push -q origin HEAD:refs/heads/qa-evidence || { git -C "$EV" pull -q --rebase origin qa-evidence && git -C "$EV" push -q origin HEAD:refs/heads/qa-evidence; }
+   git worktree remove --force "$EV"
+   echo "ronda $R"
    ```
 
-   Enlázalas con `https://raw.githubusercontent.com/{{org}}/{{repo}}/qa-evidence/pr-{{number}}/ronda-<n>/<archivo>.png`.
+   Si algún comando falla, no lo ignores: repórtalo en tu comentario. Enlaza las capturas con `https://raw.githubusercontent.com/{{org}}/{{repo}}/qa-evidence/pr-{{number}}/ronda-<n>/<archivo>.png`.
 7. Publica **un solo** comentario en el PR (`gh pr comment {{number}} --repo {{org}}/{{repo}} --body-file <archivo>`) con: el plan, el resultado de cada paso (✅ o ❌) con su captura y, por cada falla, **pasos para reproducirla, resultado esperado y resultado obtenido**. Al final, una línea exacta:
    - `QA: OK` si todo funciona;
    - `QA: FALLA` si al menos un paso falla;

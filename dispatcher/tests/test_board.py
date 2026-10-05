@@ -76,3 +76,7 @@ def test_closed_items_of_watched_repos_go_to_done():
     assert plan_board([issue(2)], {**current, "qr#2": ("PVTI_2", BACKLOG)}, repos=("qr",)) == [
         SetColumn("PVTI_7", "qr#7", DONE)
     ]
+
+
+def test_docs_issue_is_ready_for_agents():
+    assert column_for(issue(1, "agent:docs")) == READY

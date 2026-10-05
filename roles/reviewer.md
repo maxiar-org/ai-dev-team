@@ -17,7 +17,7 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}** (rama `{{bra
    - que los tests prueben comportamiento real;
    - que exista la sección **Entregable visible** y que sus instrucciones funcionen (pruébalas si puedes);
    - **regresiones:** que todo lo que ya funcionaba en `main` siga existiendo y siga siendo accesible (pantallas, rutas, campos, comandos). Si el diff borra o desconecta algo que no pedía el issue, es **bloqueante**;
-   - **repos de solo documentación:** si `AGENTS.md` dice que el repo es de solo documentación, cualquier cambio fuera de `docs/` y de los archivos `.md` es **bloqueante**.
+   - **repos de solo documentación:** si `AGENTS.md` dice que el repo es de solo documentación, cualquier cambio fuera de `docs/**`, los archivos `*.md` y `.github/workflows/docs.yml` (el deploy del sitio de documentación) es **bloqueante**.
 
    No abras la app en el navegador: el comportamiento lo prueba el rol QA después de tu aprobación.
 5. Publica **un solo** comentario en el PR: `gh pr comment {{number}} --repo {{org}}/{{repo}} --body-file <archivo>`. Debe incluir:
