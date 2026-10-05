@@ -191,7 +191,7 @@ def test_review_comment_from_eduardo_triggers_fix(tmp_path, cfg):
 
 
 
-def test_conflicting_pr_is_fixed_then_sent_to_eduardo(tmp_path, cfg):
+def test_conflicting_pr_is_fixed_then_reviewed_again(tmp_path, cfg):
     d, gh, cv, ws, clock = make(tmp_path, cfg)
     gh.add_item(Item(REPO, 12, "pr", "Diseño", "", frozenset({"engine:claude"}), "agent/4-diseno"))
     gh.merge_states[12] = "dirty"
@@ -202,7 +202,7 @@ def test_conflicting_pr_is_fixed_then_sent_to_eduardo(tmp_path, cfg):
     cv.status["conv1"] = "finished"
     gh.merge_states[12] = "clean"
     d.run_once()
-    assert gh.review_requests == [(12, ("maxiar",))]
+    assert "agent:review" in gh.labels(12)
     assert StateStore(cfg.state_path).load().conflict_attempts == {}
 
 
@@ -210,15 +210,17 @@ def test_conflict_that_keeps_failing_escalates(tmp_path, cfg):
     d, gh, cv, ws, clock = make(tmp_path, cfg)
     gh.add_item(Item(REPO, 12, "pr", "Diseño", "", frozenset({"engine:codex"}), "agent/4-diseno"))
     gh.merge_states[12] = "dirty"
-    for conv in ("conv1", "conv2"):
+    for _ in range(12):  # fix → review aprobada → sigue con conflictos → otro fix → ... → escala
         d.run_once()
-        cv.status[conv] = "finished"
-        d.run_once()  # termina; te pide review; sigue con conflictos
-    d.run_once()
-    assert len(cv.created) == 2
+        for conv_id in cv.status:
+            cv.status[conv_id] = "finished"
+            cv.responses[conv_id] = "VEREDICTO: APROBADO"
+        if "needs:human" in gh.labels(12):
+            break
+    fixes = [m for _, _, m in cv.created if "conflictos con la rama base" in m]
+    assert len(fixes) == 2
     assert "needs:human" in gh.labels(12)
     assert "conflictos" in gh.posted[-1][1]
-
 
 def test_blocked_issue_gets_a_single_notice(tmp_path, cfg):
     d, gh, cv, ws, clock = make(tmp_path, cfg)

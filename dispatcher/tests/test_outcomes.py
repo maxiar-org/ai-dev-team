@@ -116,6 +116,6 @@ def test_trigger_label_is_always_removed(role, kind, trigger_label, status):
 
 
 
-def test_fix_from_conflict_asks_eduardo_directly():
+def test_fix_from_conflict_goes_back_to_agent_review():
     out = outcome_for(task("fix", "pr", 11, trigger="conflict"), "finished", "", frozenset(), None, 0, 2)
-    assert (out.result, out.ops[-1]) == ("fix_aplicado", RequestReview(11))
+    assert (out.result, out.ops[-1]) == ("fix_aplicado", AddLabels(11, ("agent:review",)))

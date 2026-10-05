@@ -46,9 +46,23 @@ class CanvasClient:
             base_url=base_url, timeout=30, headers={"X-Session-API-Key": api_key}
         )
 
+    def _mcp_config(self) -> dict[str, Any] | None:
+        """MCP servers configurados en Canvas (Customize → MCP Servers). Las conversaciones creadas
+        por API no los heredan si se manda agent_settings, así que se copian explícitamente."""
+        try:
+            resp = self.http.get("/api/settings")
+            resp.raise_for_status()
+            return (resp.json().get("agent_settings") or {}).get("mcp_config") or None
+        except (httpx.HTTPError, ValueError):
+            return None
+
     def create_conversation(self, engine: str, working_dir: str, message: str) -> str:
+        agent_settings: dict[str, Any] = dict(ENGINE_AGENT_SETTINGS[engine])
+        mcp = self._mcp_config()
+        if mcp:
+            agent_settings["mcp_config"] = mcp
         payload = {
-            "agent_settings": dict(ENGINE_AGENT_SETTINGS[engine]),
+            "agent_settings": agent_settings,
             "workspace": {"working_dir": working_dir},
             "initial_message": {
                 "role": "user",

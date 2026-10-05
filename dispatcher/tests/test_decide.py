@@ -218,3 +218,8 @@ def test_eduardo_comment_overrides_dependency(cfg):
     c = Comment(91, "qr", 5, "maxiar", "@openhands arrancá igual")
     [start] = starts(decide([blocked, issue(4)], [c], {}, State(), cfg, NOW))
     assert start.trigger == "comment"
+
+
+
+def test_conflict_instruction_forbids_dropping_main_features():
+    assert "nunca descartes" in CONFLICT_INSTRUCTION.lower() and "needs:human" in CONFLICT_INSTRUCTION

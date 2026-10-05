@@ -36,7 +36,10 @@ MAX_CONFLICT_ATTEMPTS = 2
 CONFLICT_INSTRUCTION = (
     "Este PR tiene conflictos con la rama base. Hacé `git fetch origin` y mergeá `origin/main` en "
     "esta rama, resolvé los conflictos preservando la funcionalidad de ambos lados, corré las "
-    "verificaciones de AGENTS.md y pusheá. No cambies nada más."
+    "verificaciones de AGENTS.md y pusheá. No cambies nada más. "
+    "Regla estricta: nunca descartes funcionalidad que ya está en main (pantallas, rutas, campos, "
+    "tests): integrala con la de este PR. Si no podés combinar ambos lados sin perder algo, no "
+    "elijas uno: explicá el problema en un comentario del PR, agregá el label needs:human y terminá."
 )
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 _DEPENDS_LINE = re.compile(r"(?im)^.*\b(?:depende de|depends on|bloqueado por|blocked by)\b.*$")

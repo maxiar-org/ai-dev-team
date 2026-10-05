@@ -15,7 +15,9 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}** (rama `{{bra
    - que se cumplan los criterios de aceptación del issue;
    - bugs y casos borde;
    - que los tests prueben comportamiento real;
-   - que exista la sección **Entregable visible** y que sus instrucciones funcionen (pruébalas si puedes).
+   - que exista la sección **Entregable visible** y que sus instrucciones funcionen (pruébalas si puedes);
+   - **regresiones:** que todo lo que ya funcionaba en `main` siga existiendo y siga siendo accesible (pantallas, rutas, campos, comandos). Si el diff borra o desconecta algo que no pedía el issue, es **bloqueante**;
+   - **UI:** si el proyecto tiene interfaz web y tienes herramientas de Playwright, levántala como indica `AGENTS.md`, recorre los flujos que toca el PR y los principales que ya existían, y toma capturas. Describe en tu comentario qué viste.
 5. Publica **un solo** comentario en el PR: `gh pr comment {{number}} --repo {{org}}/{{repo}} --body-file <archivo>`. Debe incluir:
    - un resumen;
    - una lista numerada de problemas, cada uno con `archivo:línea` y por qué importa, separando los **bloqueantes** de las **sugerencias**;

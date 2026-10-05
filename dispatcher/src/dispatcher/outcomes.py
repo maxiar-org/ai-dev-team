@@ -124,5 +124,7 @@ def outcome_for(
     # role == "fix"
     if LABEL_HUMAN in current_labels:
         return Outcome("needs_human", tuple(ops), rounds)
-    ops.append(AddLabels(n, (LABEL_REVIEW,)) if task.trigger == "label" else RequestReview(n))
+    # Tras una corrección por label o por conflicto vuelve a revisar el agente: una resolución de
+    # conflictos puede descartar funcionalidad sin que el CI lo note. Si lo pidió Eduardo, le vuelve a él.
+    ops.append(RequestReview(n) if task.trigger == "comment" else AddLabels(n, (LABEL_REVIEW,)))
     return Outcome("fix_aplicado", tuple(ops), rounds)

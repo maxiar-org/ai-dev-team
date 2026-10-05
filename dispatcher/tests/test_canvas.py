@@ -22,6 +22,7 @@ def canvas():
 
 @respx.mock
 def test_create_conversation_sends_engine_workspace_and_message(canvas):
+    route("GET", "/api/settings").respond(json={"agent_settings": {"agent_kind": "llm"}})
     created = route("POST", "/api/conversations").respond(201, json={"id": ID1_DASHED.upper()})
     assert canvas.create_conversation("claude", "/projects/qr/issue-3", "Hola") == ID1
     request = created.calls.last.request
@@ -35,6 +36,7 @@ def test_create_conversation_sends_engine_workspace_and_message(canvas):
 
 @respx.mock
 def test_create_conversation_raises_busy_on_429(canvas):
+    route("GET", "/api/settings").respond(json={})
     route("POST", "/api/conversations").respond(429)
     with pytest.raises(CanvasBusy):
         canvas.create_conversation("codex", "/p", "Hola")
@@ -80,3 +82,21 @@ def test_final_response_and_pause(canvas):
     assert canvas.final_response(ID1) == "VEREDICTO: APROBADO"
     canvas.pause(ID1)
     assert paused.called
+
+
+@respx.mock
+def test_create_conversation_includes_mcp_servers_configured_in_canvas(canvas):
+    mcp = {"playwright": {"transport": "stdio", "command": "npx", "args": ["-y", "@playwright/mcp"], "enabled": True}}
+    route("GET", "/api/settings").respond(json={"agent_settings": {"mcp_config": mcp, "acp_server": "codex"}})
+    created = route("POST", "/api/conversations").respond(201, json={"id": ID1})
+    canvas.create_conversation("claude", "/p", "Hola")
+    settings = json.loads(created.calls.last.request.content)["agent_settings"]
+    assert settings == {"agent_kind": "acp", "acp_server": "claude-code", "mcp_config": mcp}
+
+
+@respx.mock
+def test_create_conversation_works_if_settings_are_unreadable(canvas):
+    route("GET", "/api/settings").respond(500)
+    created = route("POST", "/api/conversations").respond(201, json={"id": ID1})
+    canvas.create_conversation("codex", "/p", "Hola")
+    assert "mcp_config" not in json.loads(created.calls.last.request.content)["agent_settings"]

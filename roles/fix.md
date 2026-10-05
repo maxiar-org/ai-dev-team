@@ -12,7 +12,7 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}** (rama `{{bra
 
 1. Estás en una copia del repo con la rama `{{branch}}`. Lee `AGENTS.md` si existe.
 2. Lee todos los comentarios del PR: `gh pr view {{number}} --repo {{org}}/{{repo}} --comments`. Lo que hay que corregir está en el último comentario del reviewer (el que tiene `VEREDICTO: CAMBIOS`) o en el pedido de arriba.
-3. Corrige con TDD: primero un test que reproduzca el problema, después la corrección. Atiende todos los puntos **bloqueantes**; las sugerencias, solo si son baratas.
+3. Corrige con TDD: primero un test que reproduzca el problema, después la corrección. Atiende todos los puntos **bloqueantes**; las sugerencias, solo si son baratas. Nunca descartes funcionalidad que ya existe en `main` para resolver algo.
 4. Corre las verificaciones de `AGENTS.md` (en Flutter: `flutter analyze` y `flutter test`), haz commit y `git push origin {{branch}}`.
 5. Comenta en el PR qué corregiste, punto por punto: `gh pr comment {{number}} --repo {{org}}/{{repo}} --body-file <archivo>`.
 

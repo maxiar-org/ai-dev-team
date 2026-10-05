@@ -9,4 +9,10 @@ if [ -n "${CODEX_AUTH_JSON:-}" ] && [ ! -s "$auth" ]; then
   umask 077
   printf '%s' "$CODEX_AUTH_JSON" > "$auth"
 fi
+# Sin conectores de ChatGPT (Gmail, etc.): un agente que lee issues no debe tener acceso a ellos.
+cfg="$HOME/.codex/config.toml"
+mkdir -p "$HOME/.codex"
+if ! grep -qs '^apps *= *false' "$cfg"; then
+  printf '\n[features]\napps = false\n' >> "$cfg"
+fi
 exec tini -- /opt/agent-canvas/entrypoint.sh "$@"
