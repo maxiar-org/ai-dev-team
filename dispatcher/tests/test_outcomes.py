@@ -1,7 +1,7 @@
 import pytest
 
 from dispatcher.models import ActiveTask, AddLabels, Item, PostComment, RemoveLabel, RequestReview
-from dispatcher.outcomes import find_pr_for_issue, outcome_for, parse_verdict
+from dispatcher.outcomes import find_pr_for_issue, outcome_for, parse_qa_verdict, parse_verdict
 
 
 def task(role="dev", kind="issue", number=3, engine="codex", trigger="label"):
@@ -43,9 +43,9 @@ def test_abnormal_status_escalates(status):
     assert any(status in op.body for op in out.ops if isinstance(op, PostComment))
 
 
-def test_review_approved_requests_human_review():
+def test_review_approved_goes_to_qa():
     out = outcome_for(task("review", "pr", 7, "claude"), "finished", "Todo bien.\nVEREDICTO: APROBADO", frozenset(), None, 0, 2)
-    assert (out.result, out.ops[-1]) == ("aprobado", RequestReview(7))
+    assert (out.result, out.ops[-1]) == ("aprobado", AddLabels(7, ("agent:qa",)))
 
 
 def test_review_changes_requests_fix_and_counts_round():
@@ -119,3 +119,49 @@ def test_trigger_label_is_always_removed(role, kind, trigger_label, status):
 def test_fix_from_conflict_goes_back_to_agent_review():
     out = outcome_for(task("fix", "pr", 11, trigger="conflict"), "finished", "", frozenset(), None, 0, 2)
     assert (out.result, out.ops[-1]) == ("fix_aplicado", AddLabels(11, ("agent:review",)))
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [("QA: OK", "OK"), ("**QA: FALLA**", "FALLA"), ("QA: n/a", "N/A"), ("QA: FALLA\n...\nQA: OK", "OK"), ("VEREDICTO: APROBADO", None)],
+)
+def test_parse_qa_verdict(text, expected):
+    assert parse_qa_verdict(text) == expected
+
+
+@pytest.mark.parametrize("verdict,result", [("OK", "qa_ok"), ("N/A", "qa_na")])
+def test_qa_ok_or_na_requests_human_review(verdict, result):
+    out = outcome_for(task("qa", "pr", 7, "codex"), "finished", f"Probé todo.\nQA: {verdict}", frozenset(), None, 0, 2)
+    assert (out.result, out.ops[-1]) == (result, RequestReview(7))
+    assert RemoveLabel(7, "agent:qa") in out.ops
+
+
+def test_qa_failure_sends_to_fix_and_counts_qa_round():
+    out = outcome_for(task("qa", "pr", 7, "codex"), "finished", "QA: FALLA", frozenset(), None, 1, 2, qa_rounds=0)
+    assert (out.result, out.review_rounds, out.qa_rounds, out.ops[-1]) == ("qa_falla", 1, 1, AddLabels(7, ("agent:fix",)))
+
+
+def test_qa_failure_after_max_rounds_escalates():
+    out = outcome_for(task("qa", "pr", 7, "codex"), "finished", "QA: FALLA", frozenset(), None, 0, 2, qa_rounds=2)
+    assert (out.result, out.qa_rounds) == ("max_rondas_qa", 3)
+    assert AddLabels(7, ("needs:human",)) in out.ops
+
+
+def test_qa_without_qa_verdict_escalates():
+    out = outcome_for(task("qa", "pr", 7, "codex"), "finished", "VEREDICTO: APROBADO", frozenset(), None, 0, 2)
+    assert out.result == "sin_resultado" and AddLabels(7, ("needs:human",)) in out.ops
+
+
+def test_docs_with_pr_goes_to_review_like_dev():
+    out = outcome_for(task("docs", "issue", 3, "claude"), "finished", "", frozenset(), pr_item(), 0, 2)
+    assert out.result == "pr_abierto"
+    assert out.ops == (
+        RemoveLabel(3, "agent:working"),
+        RemoveLabel(3, "agent:docs"),
+        AddLabels(7, ("agent:review", "engine:claude")),
+    )
+
+
+def test_review_rounds_and_qa_rounds_are_preserved_when_unchanged():
+    out = outcome_for(task("fix", "pr", 7), "finished", "", frozenset(), None, 1, 2, qa_rounds=1)
+    assert (out.review_rounds, out.qa_rounds) == (1, 1)
