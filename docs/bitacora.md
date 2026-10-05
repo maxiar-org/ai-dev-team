@@ -35,3 +35,16 @@ Tiempos: dev (Codex) 2,1 min, review (Claude) 1,1 min, unos 4,5 min en total des
 ## Decisiones de arquitectura (2026-10-05)
 - **Rol de OpenHands:** se usa solo como runtime de agentes (ejecución ACP con suscripciones, entorno de trabajo, historial de conversaciones y métricas de tokens). La orquestación es propia, en el dispatcher.
 - **OpenHands Cloud Individual descartado por ahora:** tiene un límite de 10 conversaciones por día y solo funciona con API key o créditos (pago por uso), sin las suscripciones.
+
+## Fase 4: previews por PR (eje propuesto, 2026-10-05)
+Necesidad: probar los entregables visuales sin tener que clonar, compilar ni estar frente a la máquina. Para proyectos futuros, eso incluye el stack completo (app, DB, caché, monitoreo).
+
+| Opción | Resumen | Evaluación |
+|---|---|---|
+| **A. PaaS self-hosted en la mini-PC (Coolify o Dokploy) + Cloudflare Tunnel** | Preview por PR desde el `docker-compose` completo, en `pr-N.<proyecto>.<dominio>` con HTTPS, que se borra al cerrar el PR | **Recomendada.** Cero código propio y costo cero (solo el dominio). El mismo túnel destraba los eventos de Canvas, y trae su propio panel de despliegues |
+| B. Nube con contenedores (Cloud Run, Fly.io, Railway) | El CI arma la imagen, la sube a GHCR y despliega una revisión por PR | No depende del hardware, pero las bases de datos por preview cuestan y hay más configuración |
+| C. Runner self-hosted + compose a mano | Igual que A, pero construido a mano | Reinventa lo que A ya trae |
+
+Es una decisión de arquitectura: necesita su propio diseño, spec y plan. Se evalúa junto con los eventos de Canvas y el complemento visual.
+
+Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que da una URL HTTPS `*.trycloudflare.com` sin cuenta y dura mientras corre el comando.
