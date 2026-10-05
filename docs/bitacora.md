@@ -30,3 +30,8 @@ Tiempos: dev (Codex) 2,1 min, review (Claude) 1,1 min, unos 4,5 min en total des
 
 ## Pendiente para la fase 4 (mini-PC)
 - **Probar las automatizaciones por eventos de Canvas.** Según https://docs.openhands.dev/enterprise/enterprise-vs-oss, Canvas en una VM las admite "si la VM es accesible", es decir, si GitHub puede llegar a ella desde internet. En self-hosted el camino es un webhook propio, porque el built-in de GitHub requiere la GitHub App y una organización de equipo de OpenHands Cloud. Prueba propuesta: Cloudflare Tunnel hacia Canvas, un webhook de GitHub en `agent-playground` y una automatización que se dispare con un label. Si funciona, el dispatcher recibe los eventos por webhook en lugar de consultar GitHub cada minuto.
+- **Complemento visual propio para ai-dev-team.** Una vista de estado y resumen por proyecto: qué está hecho, qué está en curso, qué está bloqueado, qué espera a Eduardo y en qué orden mergear, más las métricas de consumo. Hoy ese resumen lo arma Claude Code cuando Eduardo lo pide, y complementa al Kanban de GitHub Projects. Hay que evaluarlo junto con el approach de eventos.
+
+## Decisiones de arquitectura (2026-10-05)
+- **Rol de OpenHands:** se usa solo como runtime de agentes (ejecución ACP con suscripciones, entorno de trabajo, historial de conversaciones y métricas de tokens). La orquestación es propia, en el dispatcher.
+- **OpenHands Cloud Individual descartado por ahora:** tiene un límite de 10 conversaciones por día y solo funciona con API key o créditos (pago por uso), sin las suscripciones.
