@@ -27,3 +27,6 @@ Tiempos: dev (Codex) 2,1 min, review (Claude) 1,1 min, unos 4,5 min en total des
 
 ### Limitaciones de las métricas
 - Para Codex, Canvas reporta costo 0 (no tiene precios para el modelo) y muy pocos tokens. El consumo real de Codex hay que mirarlo en la página de uso de ChatGPT.
+
+## Pendiente para la fase 4 (mini-PC)
+- **Probar las automatizaciones por eventos de Canvas.** Según https://docs.openhands.dev/enterprise/enterprise-vs-oss, Canvas en una VM las admite "si la VM es accesible", es decir, si GitHub puede llegar a ella desde internet. En self-hosted el camino es un webhook propio, porque el built-in de GitHub requiere la GitHub App y una organización de equipo de OpenHands Cloud. Prueba propuesta: Cloudflare Tunnel hacia Canvas, un webhook de GitHub en `agent-playground` y una automatización que se dispare con un label. Si funciona, el dispatcher recibe los eventos por webhook en lugar de consultar GitHub cada minuto.
