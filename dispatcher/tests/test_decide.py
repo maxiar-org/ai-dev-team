@@ -1,3 +1,5 @@
+import dataclasses
+
 import pytest
 
 from dispatcher.decide import CONFLICT_INSTRUCTION, decide, parse_dependencies
@@ -8,6 +10,7 @@ from dispatcher.models import (
     FinishTask,
     Item,
     BlockedNotice,
+    DocsOnlyNotice,
     EscalateConflict,
     PauseConversation,
     ReleaseOrphan,
@@ -223,3 +226,40 @@ def test_eduardo_comment_overrides_dependency(cfg):
 
 def test_conflict_instruction_forbids_dropping_main_features():
     assert "nunca descartes" in CONFLICT_INSTRUCTION.lower() and "needs:human" in CONFLICT_INSTRUCTION
+
+
+def test_issue_with_agent_docs_starts_docs_with_docs_engine(cfg):
+    [start] = starts(decide([issue(1, "agent:docs")], [], {}, State(), cfg, NOW))
+    assert (start.role, start.engine) == ("docs", "claude")
+
+
+def test_qa_uses_configured_engine_not_pr_engine(cfg):
+    [start] = starts(decide([pr(5, "agent:qa", "engine:codex")], [], {}, State(), cfg, NOW))
+    assert (start.role, start.engine) == ("qa", "codex")
+    cfg2 = dataclasses.replace(cfg, qa_engine="claude")
+    [start] = starts(decide([pr(5, "agent:qa", "engine:codex")], [], {}, State(), cfg2, NOW))
+    assert start.engine == "claude"
+
+
+def test_agent_dev_in_docs_only_repo_does_not_start_and_notifies_once(cfg):
+    cfg2 = dataclasses.replace(cfg, docs_only_repos=("qr",))
+    i = issue(1, "agent:dev")
+    assert decide([i], [], {}, State(), cfg2, NOW) == [DocsOnlyNotice(i)]
+    assert decide([i], [], {}, State(docs_only_notified={"qr#1"}), cfg2, NOW) == []
+
+
+def test_comment_in_docs_only_repo_triggers_docs(cfg):
+    cfg2 = dataclasses.replace(cfg, docs_only_repos=("qr",))
+    c = Comment(95, "qr", 1, "maxiar", "@openhands documentá esto")
+    [start] = starts(decide([issue(1)], [c], {}, State(), cfg2, NOW))
+    assert (start.role, start.engine) == ("docs", "claude")
+
+
+def test_docs_issue_waits_for_dependency(cfg):
+    blocked = Item("qr", 5, "issue", "Docs", "Depende de #4", frozenset({"agent:docs"}))
+    assert starts(decide([blocked, issue(4)], [], {}, State(), cfg, NOW)) == []
+
+
+def test_pr_waiting_for_qa_is_not_fixed_for_conflicts(cfg):
+    actions = decide([dirty_pr(11, "agent:qa")], [], {}, State(), cfg, NOW)
+    assert [a for a in actions if isinstance(a, StartTask) and a.trigger == "conflict"] == []

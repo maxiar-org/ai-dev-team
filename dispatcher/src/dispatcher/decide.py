@@ -8,8 +8,10 @@ from collections.abc import Iterable, Mapping
 from .config import Config
 from .models import (
     LABEL_DEV,
+    LABEL_DOCS,
     LABEL_FIX,
     LABEL_HUMAN,
+    LABEL_QA,
     LABEL_REVIEW,
     LABEL_WORKING,
     MENTION,
@@ -17,6 +19,7 @@ from .models import (
     BlockedNotice,
     Comment,
     ConvInfo,
+    DocsOnlyNotice,
     EscalateConflict,
     FinishTask,
     Item,
@@ -91,8 +94,12 @@ def decide(
     open_issues = {(i.repo, i.number) for i in items if i.kind == "issue"}
     label_candidates = []
     for candidate in _label_candidates(items, cfg):
+        if candidate.role == "dev" and candidate.item.repo in cfg.docs_only_repos:
+            if candidate.item.key not in state.docs_only_notified:
+                actions.append(DocsOnlyNotice(candidate.item))
+            continue
         deps = ()
-        if candidate.role == "dev":
+        if candidate.role in ("dev", "docs"):
             deps = tuple(d for d in parse_dependencies(candidate.item.body) if (candidate.item.repo, d) in open_issues)
         if deps:
             if state.blocked_notified.get(candidate.item.key) != list(deps):
@@ -103,7 +110,7 @@ def decide(
     for item in items:
         if item.kind != "pr" or item.mergeable_state != "dirty":
             continue
-        if item.labels & {LABEL_WORKING, LABEL_HUMAN, LABEL_REVIEW, LABEL_FIX} or item.key in busy_items:
+        if item.labels & {LABEL_WORKING, LABEL_HUMAN, LABEL_REVIEW, LABEL_FIX, LABEL_QA} or item.key in busy_items:
             continue
         if state.conflict_attempts.get(item.key, 0) >= MAX_CONFLICT_ATTEMPTS:
             actions.append(EscalateConflict(item))
@@ -137,8 +144,13 @@ def _comment_candidates(
         item = by_key.get(item_key(comment.repo, comment.number))
         if item is None:
             continue
-        role = "fix" if item.kind == "pr" else "dev"
-        engine = engine_from_labels(item.labels, cfg.default_dev_engine)
+        if item.kind == "pr":
+            role, default_engine = "fix", cfg.default_dev_engine
+        elif item.repo in cfg.docs_only_repos or LABEL_DOCS in item.labels:
+            role, default_engine = "docs", cfg.docs_engine
+        else:
+            role, default_engine = "dev", cfg.default_dev_engine
+        engine = engine_from_labels(item.labels, default_engine)
         out.append(StartTask(item, role, engine, "comment", comment.body, comment.id))
     return out
 
@@ -150,10 +162,14 @@ def _label_candidates(items: list[Item], cfg: Config) -> list[StartTask]:
         if LABEL_WORKING in labels or LABEL_HUMAN in labels:
             continue
         dev_engine = engine_from_labels(labels, cfg.default_dev_engine)
-        if item.kind == "issue" and LABEL_DEV in labels:
+        if item.kind == "issue" and LABEL_DOCS in labels:
+            out.append(StartTask(item, "docs", engine_from_labels(labels, cfg.docs_engine), "label"))
+        elif item.kind == "issue" and LABEL_DEV in labels:
             out.append(StartTask(item, "dev", dev_engine, "label"))
         elif item.kind == "pr" and LABEL_FIX in labels:
             out.append(StartTask(item, "fix", dev_engine, "label"))
         elif item.kind == "pr" and LABEL_REVIEW in labels:
             out.append(StartTask(item, "review", other_engine(dev_engine), "label"))
+        elif item.kind == "pr" and LABEL_QA in labels:
+            out.append(StartTask(item, "qa", cfg.qa_engine, "label"))
     return out
