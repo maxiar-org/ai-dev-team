@@ -37,6 +37,9 @@ services:
       BOT_LOGIN: ${BOT_LOGIN:-maxiar-ai-dev-team-bot}
       DEFAULT_DEV_ENGINE: ${DEFAULT_DEV_ENGINE:-codex}
       PROJECT_NUMBER: ${PROJECT_NUMBER:-}
+      QA_ENGINE: ${QA_ENGINE:-codex}
+      DOCS_ENGINE: ${DOCS_ENGINE:-claude}
+      DOCS_ONLY_REPOS: ${DOCS_ONLY_REPOS:-}
       CANVAS_URL: http://canvas:8000
       CANVAS_API_KEY: ${CANVAS_API_KEY}
       PROJECTS_DIR: /projects

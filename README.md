@@ -13,9 +13,10 @@ toma issues etiquetados, abre PRs, los revisa con otro modelo y te pide la aprob
 | Pones `agent:dev` en un issue | El dev (Codex por defecto; `engine:claude` lo cambia) implementa con TDD y abre un PR |
 | — | El dispatcher le pone `agent:review` al PR y lo revisa el otro modelo |
 | — | Si hay `VEREDICTO: CAMBIOS`, el dev corrige (máximo 2 rondas) |
-| — | Si hay `VEREDICTO: APROBADO`, te llega un pedido de review en GitHub |
+| — | Si hay `VEREDICTO: APROBADO`, el PR pasa a **QA** (Codex), que prueba la app con Playwright: `QA: OK` → te llega un pedido de review; `QA: FALLA` → vuelve al dev |
+| Pones `agent:docs` en un issue | El agente de docs (Claude por defecto) actualiza el sitio Starlight del repo y abre un PR |
 | Comentas `@openhands ...` en un issue o PR (comentario normal o review del PR; no en comentarios sobre líneas de código) | El dev retoma la tarea con tu instrucción |
-| — | Si un PR queda con conflictos con `main` (por ejemplo, después de mergear otro), el dev los resuelve solo (máximo 2 intentos) y te vuelve a pedir review |
+| — | Si un PR queda con conflictos con `main` (por ejemplo, después de mergear otro), el dev los resuelve solo (máximo 2 intentos) y el PR vuelve a review y QA |
 | Escribes `Depende de #N` en un issue | El dispatcher no lo arranca hasta que el #N se cierre, y lo avisa con un comentario |
 | Ves `needs:human` | Un agente necesita una decisión tuya: respóndele con `@openhands ...` |
 | Apruebas y mergeas | Solo tú puedes hacerlo; `main` está protegida |

@@ -6,3 +6,5 @@ agent:fix|d93f0b|El dev debe atender la review (lo pone el dispatcher)
 needs:human|b60205|Esperando una decisión de Eduardo
 engine:claude|c5def5|Motor: Claude Code
 engine:codex|bfd4f2|Motor: Codex
+agent:qa|0e8a16|QA prueba el comportamiento de este PR (lo pone el dispatcher)
+agent:docs|c2e0c6|El agente de docs documenta este issue
