@@ -48,3 +48,13 @@ Necesidad: probar los entregables visuales sin tener que clonar, compilar ni est
 Es una decisión de arquitectura: necesita su propio diseño, spec y plan. Se evalúa junto con los eventos de Canvas y el complemento visual.
 
 Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que da una URL HTTPS `*.trycloudflare.com` sin cuenta y dura mientras corre el comando.
+
+## 2026-10-05: fase 2 cerrada (roles QA y Docs)
+- **Flujo nuevo:** dev → reviewer (código) → **QA** (comportamiento, con Playwright y capturas en la rama `qa-evidence`) → Eduardo. Un `QA: FALLA` vuelve al dev. El reviewer y el dev ya no usan el navegador.
+- **Rol Docs:** se dispara con `agent:docs` y escribe un sitio Starlight publicado en GitHub Pages. `ai-dev-team` se atiende como repo de solo documentación.
+- **Estreno:**
+  - `ai-dev-team#1` → PR #2. Docs con Claude en 26 min, review y QA OK a la primera. Publicado en https://maxiar-org.github.io/ai-dev-team/
+  - `qr-generator#21` → PR #22. **QA detectó que el diagrama Mermaid era ilegible en el celular** (`QA: FALLA` con medición y captura). Lo corrigió el fix y la segunda ronda dio `QA: OK`. QA también corrió una regresión de WhatsApp e Instagram decodificando los QR. Publicado en https://maxiar-org.github.io/qr-generator/
+- **La revisión independiente encontró dos problemas importantes antes del despliegue** (el reviewer bloqueaba el workflow de docs, y los comandos de evidencia de QA eran frágiles en el contenedor compartido). Se corrigieron con tests.
+- **Pendientes post-piloto en `qr-generator`:** #8 (impresión directa, `needs:human`), #19 (Place ID automático) y #20 (escanear el QR de Mercado Pago).
+- **Siguiente:** fase 4, la migración a la mini-PC.
