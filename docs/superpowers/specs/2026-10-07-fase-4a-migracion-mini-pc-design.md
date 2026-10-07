@@ -9,6 +9,10 @@
 
 Que el AI Dev Team funcione al 100 % en la mini-PC, **sin depender de la Mac**, y que Eduardo pueda operarlo desde cualquier lugar: el celular, claude.ai o GitHub.
 
+### Principio: todo en Docker Compose
+
+**En el host solo hay Docker** (Engine y el plugin Compose). Todo lo demás es un servicio del `docker-compose.yml`: Canvas, dispatcher, túnel, watchdog y operador. Mudar la infraestructura a otra máquina es instalar Docker, copiar el repo, el `.env` y los volúmenes, y ejecutar `docker compose up -d`.
+
 ### Criterios de éxito (entregable visible)
 
 1. **Con la Mac apagada:** un issue de prueba en `agent-playground` con `agent:dev` recorre dev → review → QA → pedido de review.
@@ -31,7 +35,7 @@ Que el AI Dev Team funcione al 100 % en la mini-PC, **sin depender de la Mac**, 
 ### 3.1 Base
 
 - Docker Engine y el plugin Compose desde el repositorio oficial de Docker, con el servicio habilitado al arranque.
-- **Usuario dedicado `aidev`**, en el grupo `docker` y sin login por contraseña, para que el SSH lo haga `root` con `sudo -iu aidev`. Corre el stack, el watchdog y el operador.
+- **Usuario dedicado `aidev`**, en el grupo `docker` y sin login por contraseña (se entra desde `root` con `sudo -iu aidev`). Es dueño de `/opt/ai-dev-team` y ejecuta `docker compose`. No tiene servicios propios en el host.
 - El repo `maxiar-org/ai-dev-team` se clona en `/opt/ai-dev-team` (dueño `aidev`). Para hacer push con la sesión de `gh` de `aidev` se usa el helper de credenciales local del repo, igual que en la Mac.
 - El `.env` se copia desde la Mac con `scp`, con permisos `600`. Nunca pasa por GitHub.
 
@@ -56,27 +60,28 @@ Que el AI Dev Team funcione al 100 % en la mini-PC, **sin depender de la Mac**, 
 ### 3.4 Operación sin supervisión
 
 - **Latido:** al final de cada ciclo, el dispatcher escribe la hora en `/state/heartbeat`.
-- **Watchdog** (`ops/watchdog.py`, que corre cada 5 minutos con un timer de `systemd` del usuario `aidev`):
+- **Watchdog**: servicio `watchdog` del compose (`ops/watchdog.py`, en un ciclo cada 5 minutos, `restart: unless-stopped`). **No monta el socket de Docker.**
   - **Chequeos:**
-    - los contenedores `canvas`, `dispatcher` y `cloudflared` están en estado `running`;
-    - `GET /api/conversations/count` con la clave responde 200;
-    - el latido tiene menos de 5 minutos;
-    - el uso de disco es menor al 85 %.
-  - **Si falla un chequeo** y no hay un issue `ops` abierto para ese chequeo, abre uno en `ai-dev-team` con el título `[ops] <chequeo>`, el detalle y las últimas líneas de log.
-  - **Si un chequeo se recupera,** comenta en su issue y lo cierra.
-  - **Vencimientos:**
-    - lee `GITHUB_TOKEN_EXPIRES` y `CLAUDE_TOKEN_EXPIRES` (fechas ISO en `.env`);
-    - 14 días antes de cada uno abre `[ops] Renovar <token> (vence <fecha>)`, una sola vez.
-  - Usa el token del bot (`GITHUB_TOKEN`) con `gh` o la API REST.
-  - Lógica pura y testeable (decidir qué issues abrir o cerrar a partir de los resultados) separada de la parte de I/O.
-- **Reinicio:** `restart: unless-stopped` en todos los servicios, Docker habilitado al arranque, y los timers de `systemd` del usuario `aidev` con `loginctl enable-linger aidev`.
+    - Canvas: `GET http://canvas:8000/api/conversations/count` con la clave responde 200;
+    - dispatcher: el latido en el volumen `dispatcher-state` (montado en solo lectura) tiene menos de 5 minutos;
+    - túnel: `GET http://cloudflared:2000/ready` (métricas de `cloudflared`, que se exponen solo en la red interna) responde 200;
+    - disco: el uso del sistema de archivos que ve el contenedor (el disco de la VM) es menor al 85 %.
+
+    Si un contenedor se cae, su chequeo falla.
+  - **Si falla un chequeo** y no hay un issue `ops` abierto para ese chequeo, abre uno en `ai-dev-team` con el título `[ops] <chequeo>` y el detalle. Si se recupera, comenta en su issue y lo cierra.
+  - **Vencimientos:** lee `GITHUB_TOKEN_EXPIRES` y `CLAUDE_TOKEN_EXPIRES` (fechas ISO en `.env`). 14 días antes de cada uno abre `[ops] Renovar <token> (vence <fecha>)`, una sola vez.
+  - Usa la API REST de GitHub con el token del bot. La lógica pura (qué abrir o cerrar a partir de los resultados) va separada del I/O y tiene tests.
+- **Reinicio:** `restart: unless-stopped` en todos los servicios y Docker habilitado al arranque. No hay timers ni servicios de `systemd` propios.
 - **Backups:** **quedan para más adelante**, por decisión de Eduardo. Ver los riesgos.
 
 ### 3.5 Operador remoto
 
-- Claude Code (CLI oficial) instalado para el usuario `aidev`, con login de la **cuenta personal de Eduardo** (la misma que usa hoy en la Mac), **no** la cuenta Pro de los agentes. El login se hace una vez, con el flujo de código pegado en el navegador.
-- Un servicio `systemd` del usuario (`aidev-operador.service`) arranca una sesión de `tmux` llamada `operador` con `claude --remote-control`, en `/opt/ai-dev-team`.
-- Eduardo se conecta desde la app de Claude o desde claude.ai/code.
+- Servicio **`operador`** del compose: una imagen propia (`operador/Dockerfile`) con Claude Code (CLI oficial), `git`, `gh`, `tmux`, `python3` y el cliente de Docker con el plugin Compose.
+  - Su comando arranca `claude --remote-control` dentro de una sesión de `tmux` llamada `operador`, en `/opt/ai-dev-team`, y mantiene vivo el contenedor. Si `claude` termina, lo vuelve a lanzar.
+  - **Volumen `operador-home`** para el `HOME` del contenedor (`~/.claude` con el login, la memoria y la configuración, más la configuración de `gh`). Sobrevive reinicios y se muda con el resto.
+  - Monta el repo (`/opt/ai-dev-team`, lectura y escritura) y el **socket de Docker**, para poder desplegar y reiniciar el stack. ⚠️ Eso equivale a control total de Docker en la VM: es el único servicio con ese permiso y está documentado en `CLAUDE.md`.
+  - Usa la **cuenta personal de Eduardo** (la misma que usa hoy en la Mac), **no** la cuenta Pro de los agentes. El login se hace una vez con `docker compose exec -it operador claude` (flujo de código pegado en el navegador).
+  - Eduardo se conecta desde la app de Claude o desde claude.ai/code.
 - **Conocimiento del operador:**
   - **`CLAUDE.md`** en la raíz de `ai-dev-team`:
     - arquitectura (Canvas como runtime, dispatcher como orquestador, GitHub como fuente de verdad);
@@ -86,8 +91,8 @@ Que el AI Dev Team funcione al 100 % en la mini-PC, **sin depender de la Mac**, 
   - **Skills** en `.claude/skills/` del repo:
     - `/estado`: el resumen de hecho, en curso, bloqueado, qué espera a Eduardo, en qué orden mergear, y el consumo;
     - `/desplegar`: pull, tests del dispatcher, `docker compose up -d --build` y verificación.
-  - **Memoria:** se copia `~/.claude/projects/-Users-eduardo-ai-dev-team/memory/` a la ruta equivalente del usuario `aidev` (`~/.claude/projects/-opt-ai-dev-team/memory/`).
-- **A verificar:** que la sesión aguante días en `tmux` y se reconecte. Si se cae, `systemd` la reinicia. Si Remote Control no se recupera solo, el watchdog suma un chequeo de que el proceso esté vivo.
+  - **Memoria:** se copia `~/.claude/projects/-Users-eduardo-ai-dev-team/memory/` de la Mac al volumen `operador-home`, en `~/.claude/projects/-opt-ai-dev-team/memory/`.
+- **A verificar:** que la sesión aguante días y se reconecte. Si `claude` termina, el comando del contenedor lo relanza. Si Remote Control no se recupera solo, se suma un chequeo al watchdog.
 
 ## 4. Fuera de alcance
 
@@ -102,6 +107,7 @@ Que el AI Dev Team funcione al 100 % en la mini-PC, **sin depender de la Mac**, 
 | **Sin backups:** si la VM se rompe, se pierden los volúmenes (historial de Canvas, login de Codex, estado del dispatcher) | Todo se puede reconstruir desde el repo y el `.env` (que también se guarda en el gestor de contraseñas) más un login nuevo de Codex. Configurar `vzdump` en Proxmox apenas se pueda |
 | Dos dispatchers procesando a la vez durante el corte | El de la Mac se detiene **antes** de levantar el de la mini-PC |
 | El login de Codex en el volumen migrado se invalidó por una renovación en paralelo | Si falla, login nuevo por código (procedimiento del README) y se borra `codex-home` |
-| Remote Control no aguanta días en `tmux` | Reinicio por `systemd` y chequeo del watchdog. Si aun así falla, se usa por SSH (`tmux attach`) y se reporta |
+| Remote Control no aguanta días | El contenedor relanza `claude`. Si aun así falla, se usa con `docker compose exec -it operador tmux attach` y se reporta |
+| El operador tiene el socket de Docker (control total de Docker en la VM) | Es su rol. Solo ese servicio lo tiene, y `CLAUDE.md` le prohíbe tocar contenedores, volúmenes o redes ajenos al proyecto `ai-dev-team` |
 | `cloudflared` caído deja a Canvas inaccesible desde afuera (los agentes siguen funcionando) | Chequeo del watchdog sobre `cloudflared` |
-| Conflictos con `hermes` u otros labs | Usuario `aidev` separado, sin puertos públicos nuevos (todo por el túnel) y la regla explícita en `CLAUDE.md` |
+| Conflictos con `hermes` u otros labs | Todo dentro del proyecto Compose `ai-dev-team`, sin puertos publicados en la IP de la LAN (todo por el túnel) y la regla explícita en `CLAUDE.md` |
