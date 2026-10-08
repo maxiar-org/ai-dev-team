@@ -150,3 +150,28 @@ class GitHubClient:
         resp = self.http.get(f"{self._repo(repo)}/pulls/{number}")
         resp.raise_for_status()
         return bool(resp.json().get("merged"))
+
+    def pr_details(self, repo: str, number: int) -> dict:
+        resp = self.http.get(f"{self._repo(repo)}/pulls/{number}")
+        resp.raise_for_status()
+        pr = resp.json()
+        sha = pr["head"]["sha"]
+        files = tuple(f["filename"] for f in self._paginate(f"{self._repo(repo)}/pulls/{number}/files", {"per_page": 100}))
+        runs = self.http.get(f"{self._repo(repo)}/actions/runs", params={"head_sha": sha, "per_page": 20})
+        runs.raise_for_status()
+        wr = runs.json().get("workflow_runs", [])
+        if not wr:
+            ci = "none"
+        elif any(r.get("conclusion") in ("failure", "cancelled", "timed_out") for r in wr):
+            ci = "failure"
+        elif any(r.get("status") != "completed" for r in wr):
+            ci = "pending"
+        else:
+            ci = "success"
+        return {"head_sha": sha, "head_ref": pr["head"]["ref"], "mergeable_state": pr.get("mergeable_state"),
+                "files": files, "ci": ci}
+
+    def last_comment_by(self, repo: str, number: int, login: str) -> str | None:
+        comments = self._paginate(f"{self._repo(repo)}/issues/{number}/comments", {"per_page": 100})
+        mine = [c.get("body") or "" for c in comments if (c.get("user") or {}).get("login") == login]
+        return mine[-1] if mine else None

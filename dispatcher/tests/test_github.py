@@ -133,3 +133,18 @@ def test_ops_issue_helpers(gh):
     assert json.loads(created.calls.last.request.content) == {"title": "[ops] x", "body": "cuerpo", "labels": ["ops"]}
     assert json.loads(commented.calls.last.request.content) == {"body": "recuperado"}
     assert json.loads(closed.calls.last.request.content) == {"state": "closed"}
+
+
+@respx.mock
+def test_pr_details_and_last_comment(gh):
+    route("GET", "/pulls/7").respond(json={"head": {"sha": "abc", "ref": "agent/3-x"}, "mergeable_state": "clean"})
+    route("GET", "/pulls/7/files").respond(json=[{"filename": "lib/a.dart"}, {"filename": "README.md"}])
+    route("GET", "/actions/runs").respond(json={"workflow_runs": [{"status": "completed", "conclusion": "success"}]})
+    route("GET", "/issues/9/comments").respond(json=[
+        {"user": {"login": "maxiar-ai-dev-team-bot"}, "body": "primero"},
+        {"user": {"login": "maxiar"}, "body": "humano"},
+        {"user": {"login": "maxiar-ai-dev-team-bot"}, "body": "último del bot"},
+    ])
+    d = gh.pr_details("qr", 7)
+    assert d == {"head_sha": "abc", "head_ref": "agent/3-x", "mergeable_state": "clean", "files": ("lib/a.dart", "README.md"), "ci": "success"}
+    assert gh.last_comment_by("qr", 9, "maxiar-ai-dev-team-bot") == "último del bot"
