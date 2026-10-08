@@ -58,3 +58,25 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
 - **La revisión independiente encontró dos problemas importantes antes del despliegue** (el reviewer bloqueaba el workflow de docs, y los comandos de evidencia de QA eran frágiles en el contenedor compartido). Se corrigieron con tests.
 - **Pendientes post-piloto en `qr-generator`:** #8 (impresión directa, `needs:human`), #19 (Place ID automático) y #20 (escanear el QR de Mercado Pago).
 - **Siguiente:** fase 4, la migración a la mini-PC.
+
+## 2026-10-08: fase 4a cerrada (migración a la mini-PC, autonomía y operador remoto)
+- **Todo corre en Docker Compose en la mini-PC** (`ubuntu-labs`, Ubuntu 26.04, 8 vCPU y 15 GB). En el host solo hay Docker. Servicios: `canvas`, `dispatcher`, `cloudflared`, `watchdog` y `operador`. La Mac ya no corre nada.
+- **Acceso:** `canvas.maxiar.dev` por Cloudflare Tunnel, con Access (código por email). **Operador:** Claude Code con Remote Control (sesión "operador") y la cuenta de Eduardo, con `/estado` y `/desplegar`.
+- **Criterios de éxito:**
+
+  | # | Criterio | Resultado |
+  |---|---|---|
+  | 1 | Issue de prueba hasta el pedido de review, desde la mini-PC | ✅ agent-playground#3 → PR #4, QA OK |
+  | 2 | Canvas desde el celular | ✅ (después de corregir el email en la política de Access) |
+  | 3 | `/estado` desde la app de Claude | ✅ |
+  | 4 | Alerta `[ops] dispatcher` en menos de 10 min y cierre automático | ✅ 7 min 40 s; cierre 105 s después de recuperarse |
+  | 5 | Todo vuelve solo después de un reinicio | ✅ 5 servicios arriba en menos de 1 min, sin alertas falsas |
+
+- **Problemas encontrados:**
+  - `pilot/` sin permisos para el dispatcher en Linux: generó un bucle de cierre con labels yendo y viniendo unos 30 minutos. Se corrigió con permisos y con un fix de código (las métricas ya no traban el cierre). Las métricas de agent-playground#3 y #4 quedaron infladas unos 30 minutos.
+  - Intervalo del watchdog: de 5 a 2 minutos, para cumplir los 10 minutos de detección.
+  - `docker compose up -d watchdog` también levanta el dispatcher: hay que usar `--no-deps` (anotado para el operador).
+  - Los tokens de Cloudflare y de Claude quedaron en el historial de la conversación: conviene rotarlos más adelante.
+- **Vencimientos registrados:** token del bot el 2027-01-02 y token de Claude el 2027-10-04. El watchdog avisa 14 días antes.
+- **Pendiente:** backups de la VM (`vzdump` en Proxmox).
+- **Siguiente:** 4b (Coolify y previews), 4c (eventos de GitHub) y 4d (vista de estado).
