@@ -101,3 +101,53 @@ def test_render_escapes_external_text():
 
 def test_render_shows_source_errors():
     assert "sin datos" in render(View(updated=NOW, errors={"coolify": "ConnectError"}))
+
+
+# --- Arreglos de la revisión final ---
+
+def test_null_fields_from_coolify_do_not_break_view():
+    app = AppInfo("img", "", "", "")
+    html = render(build_view(Snapshot(now=NOW, apps=[app])))
+    assert "img" in html
+
+
+def test_usage_skips_truncated_metric_rows():
+    rows = [{"motor": None, "inicio": None, "duracion_min": None}, {"motor": "codex"}]
+    assert build_view(Snapshot(now=NOW, metrics=rows)).usage == []
+
+
+def test_github_down_never_says_nothing_pending():
+    html = render(build_view(Snapshot(now=NOW, errors={"github": "ConnectError"})))
+    assert "Nada pendiente" not in html and html.count("sin datos") == 2
+
+
+def test_pr_of_issue_still_in_dev_is_not_waiting():
+    snap = Snapshot(now=NOW, issues=[issue(3, "agent:working")], prs=[pr(10, ref="agent/3-x"), pr(11, ref="agent/4-y")],
+                    active={"qr#4": {"role": "dev", "engine": "codex", "started_at": NOW}})
+    assert build_view(snap).waiting == []
+
+
+def test_only_dirty_counts_as_conflict():
+    snap = Snapshot(now=NOW, prs=[pr(10)])
+    for state, clean in (("blocked", True), ("unknown", True), ("dirty", False)):
+        p = PRInfo("qr", 10, "t", "u", frozenset(), "", "feat/x", state, "success")
+        assert build_view(Snapshot(now=NOW, prs=[p])).waiting[0]["clean"] is clean
+
+
+def test_merge_order_and_overlap_are_per_repo():
+    a = PRInfo("qr", 20, "a", "u", frozenset(), "Closes #5", "", "clean", "success", ("README.md",))
+    b = PRInfo("lab", 21, "b", "u", frozenset(), "Closes #4", "", "clean", "success", ("README.md",))
+    issues = [Item("qr", 5, "issue", "", "Depende de #4", frozenset()), Item("lab", 4, "issue", "", "", frozenset())]
+    assert [p.number for p in merge_order([a, b], issues)] == [20, 21]
+    assert all(w["warnings"] == [] for w in build_view(Snapshot(now=NOW, prs=[a, b], issues=issues)).waiting)
+
+
+def test_render_shows_linked_issue_and_dispatcher_error():
+    v = build_view(Snapshot(now=NOW, prs=[pr(10, ref="agent/3-x")], issues=[issue(3)], errors={"dispatcher": "JSONDecodeError"}))
+    html = render(v)
+    assert "https://github.com/maxiar-org/qr/issues/3" in html and "sin datos (JSONDecodeError)" in html
+
+
+def test_preview_template_with_domain_is_skipped():
+    app = AppInfo("x", "maxiar-org/qr", "https://qr.maxiar.dev", "running", preview_template="{{pr_id}}.{{domain}}", preview_prs=(10,))
+    assert build_view(Snapshot(now=NOW, prs=[pr(10)], apps=[app])).previews == []

@@ -24,3 +24,16 @@ def test_apps_with_last_deploy_and_previews():
     assert (qr.repo, qr.url, qr.status) == ("maxiar-org/qr-generator", "https://qr.maxiar.dev", "running:healthy")
     assert (qr.last_deploy, qr.last_deploy_status, qr.preview_prs) == ("2026-10-08T04:57:00Z", "finished", (23,))
     assert apps["preview-lab"].url == "https://preview-lab.maxiar.dev"
+
+
+@respx.mock
+def test_null_fields_and_failing_app_are_tolerated():
+    respx.get(f"{B}/applications").respond(json=[
+        {"uuid": "u1", "name": "img", "git_repository": None, "fqdn": None, "status": None},
+        {"uuid": "u2", "name": "rota", "git_repository": "maxiar-org/x", "fqdn": None, "status": "running"},
+    ])
+    respx.get(f"{B}/deployments/applications/u1").respond(json={"deployments": []})
+    respx.get(f"{B}/deployments/applications/u2").respond(500)
+    apps = {a.name: a for a in CoolifyClient(B, "t").apps()}
+    assert (apps["img"].repo, apps["img"].status, apps["img"].url) == ("", "", "")
+    assert apps["rota"].last_deploy is None and apps["rota"].status == "running"

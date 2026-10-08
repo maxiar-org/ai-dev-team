@@ -83,20 +83,30 @@ def issue_of(pr: PRInfo) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def merge_order(waiting: list[PRInfo], issues: list[Item]) -> list[PRInfo]:
-    by_issue = {issue_of(p): p for p in waiting if issue_of(p) is not None}
-    bodies = {i.number: i.body for i in issues}
-    base = sorted(waiting, key=lambda p: (0 if p.mergeable_state == "clean" and p.ci in ("success", "none") else 1, p.number))
+def awaits_human(labels: frozenset[str]) -> bool:
+    """Un PR sin labels de agente ni needs:human: candidato a esperar a Eduardo (lo usa el recolector)."""
+    return not (labels & AGENT_LABELS) and LABEL_HUMAN not in labels
 
-    def blockers(p: PRInfo) -> set[int]:
+
+def _ready(p: PRInfo) -> bool:
+    return p.mergeable_state != "dirty" and p.ci in ("success", "none")
+
+
+def merge_order(waiting: list[PRInfo], issues: list[Item]) -> list[PRInfo]:
+    by_issue = {(p.repo, issue_of(p)): p for p in waiting if issue_of(p) is not None}
+    bodies = {(i.repo, i.number): i.body for i in issues}
+    base = sorted(waiting, key=lambda p: (0 if _ready(p) else 1, p.number, p.repo))
+
+    def blockers(p: PRInfo) -> set[tuple[str, int]]:
         iss = issue_of(p)
-        deps = parse_dependencies(bodies.get(iss, "")) if iss is not None else ()
-        return {by_issue[d].number for d in deps if d in by_issue and by_issue[d] is not p}
+        deps = parse_dependencies(bodies.get((p.repo, iss), "")) if iss is not None else ()
+        found = (by_issue.get((p.repo, d)) for d in deps)
+        return {(b.repo, b.number) for b in found if b is not None and b is not p}
 
     result: list[PRInfo] = []
     pending = list(base)
     while pending:
-        done = {p.number for p in result}
+        done = {(p.repo, p.number) for p in result}
         pick = next((p for p in pending if blockers(p) <= done), None)
         if pick is None:  # ciclo de dependencias: se respeta el orden base
             result.extend(pending)
@@ -108,9 +118,16 @@ def merge_order(waiting: list[PRInfo], issues: list[Item]) -> list[PRInfo]:
 
 def _preview(pr: PRInfo, apps: list[AppInfo], org: str) -> str | None:
     for a in apps:
-        if a.repo in (f"{org}/{pr.repo}", pr.repo) and a.preview_template and pr.number in a.preview_prs:
-            return "https://" + a.preview_template.replace("{{pr_id}}", str(pr.number))
+        if a.repo in (f"{org}/{pr.repo}", pr.repo) and pr.number in a.preview_prs:
+            return _preview_url(a, pr.number)
     return None
+
+
+def _preview_url(app: AppInfo, number: int) -> str | None:
+    tpl = app.preview_template or ""
+    if "{{pr_id}}" not in tpl or "{{" in tpl.replace("{{pr_id}}", ""):  # p. ej. {{domain}}: no lo resolvemos
+        return None
+    return "https://" + tpl.replace("{{pr_id}}", str(number))
 
 
 def _stage(labels: frozenset[str], kind: str, task: dict | None, open_deps: list[int], now: float) -> str:
@@ -137,11 +154,11 @@ def _usage(rows: list[dict[str, str]], now: float) -> list[dict]:
         try:
             age = now - datetime.fromisoformat(r["inicio"]).timestamp()
             minutes = float(r.get("duracion_min") or 0)
-        except (KeyError, ValueError):
+        except (KeyError, TypeError, ValueError):  # fila incompleta (el dispatcher la está escribiendo)
             continue
         if age > 7 * 86400:
             continue
-        e = acc[r.get("motor", "?")]
+        e = acc[r.get("motor") or "?"]
         e["tasks_7d"] += 1
         e["minutes_7d"] += minutes
         if age <= 86400:
@@ -152,16 +169,25 @@ def _usage(rows: list[dict[str, str]], now: float) -> list[dict]:
 
 def build_view(snap: Snapshot) -> View:
     v = View(updated=snap.now, apps=snap.apps, health=snap.checks, errors=dict(snap.errors))
-    waiting = [p for p in snap.prs if not (p.labels & AGENT_LABELS) and LABEL_HUMAN not in p.labels]
+    working = {(i.repo, i.number) for i in snap.issues if LABEL_WORKING in i.labels}
+    active = {(r, int(n)) for r, _, n in (k.rpartition("#") for k in snap.active) if n.isdigit()}
+    busy = working | active
+
+    def in_agent_flow(p: PRInfo) -> bool:  # el agente sigue trabajando en el PR o en su issue
+        return (p.repo, p.number) in busy or (p.repo, issue_of(p)) in busy
+
+    waiting = [p for p in snap.prs if awaits_human(p.labels) and not in_agent_flow(p)]
     ordered = merge_order(waiting, snap.issues)
-    seen_files: list[tuple[int, set[str]]] = []
+    seen_files: list[tuple[str, int, set[str]]] = []
     for p in ordered:
         warnings = [f"puede generar conflicto con #{n} (tocan {', '.join(sorted(f & set(p.files)))})"
-                    for n, f in seen_files if f & set(p.files)]
-        seen_files.append((p.number, set(p.files)))
+                    for r, n, f in seen_files if r == p.repo and f & set(p.files)]
+        seen_files.append((p.repo, p.number, set(p.files)))
+        iss = issue_of(p)
         v.waiting.append({"repo": p.repo, "number": p.number, "title": p.title, "url": p.url, "ci": p.ci,
-                          "clean": p.mergeable_state == "clean", "preview": _preview(p, snap.apps, snap.org),
-                          "issue": issue_of(p), "warnings": warnings})
+                          "clean": p.mergeable_state != "dirty", "preview": _preview(p, snap.apps, snap.org),
+                          "issue": iss, "issue_url": f"https://github.com/{snap.org}/{p.repo}/issues/{iss}" if iss else None,
+                          "warnings": warnings})
     for it in [*snap.issues, *snap.prs]:
         if LABEL_HUMAN in it.labels:
             url = it.url if isinstance(it, PRInfo) else f"https://github.com/{snap.org}/{it.repo}/issues/{it.number}"
@@ -183,8 +209,9 @@ def build_view(snap: Snapshot) -> View:
     for a in snap.apps:
         repo = a.repo.split("/")[-1]
         for n in a.preview_prs:
-            if (repo, n) in open_prs and a.preview_template:
-                v.previews.append({"repo": repo, "number": n, "url": "https://" + a.preview_template.replace("{{pr_id}}", str(n))})
+            url = _preview_url(a, n)
+            if (repo, n) in open_prs and url:
+                v.previews.append({"repo": repo, "number": n, "url": url})
     v.usage = _usage(snap.metrics, snap.now)
     return v
 
@@ -216,16 +243,17 @@ def render(view: View) -> str:
     # 1. Qué espera de ti
     out.append("<h2>🔔 Qué espera de ti</h2>")
     out.append(_err(view, "github"))
-    if not (view.waiting or view.human or view.alerts or view.tokens):
+    if "github" not in view.errors and not (view.waiting or view.human or view.alerts or view.tokens):
         out.append('<p class="ok">Nada pendiente 🎉</p>')
     for i, w in enumerate(view.waiting, 1):
         ci = {"success": '<span class="ok">CI ✓</span>', "failure": '<span class="bad">CI ✗</span>',
               "pending": '<span class="warn">CI …</span>'}.get(w["ci"], "")
         conflict = "" if w["clean"] else '<span class="warn">conflictos</span>'
         preview = f' · {_a(w["preview"], "preview")}' if w["preview"] else ""
+        issue = f' · {_a(w.get("issue_url"), f"issue #{w["issue"]}")}' if w.get("issue") else ""
         warns = "".join(f'<div class="warn">⚠️ {escape(x)}</div>' for x in w["warnings"])
         out.append(f'<div class="card urgent"><b>{i}.</b> {_a(w["url"], f"{w["repo"]} #{w["number"]}: {w["title"]}")}'
-                   f'<div class="muted">Revisar y mergear · {ci} {conflict}{preview}</div>{warns}</div>')
+                   f'<div class="muted">Revisar y mergear{issue} · {ci} {conflict}{preview}</div>{warns}</div>')
     for h in view.human:
         note = f'<div class="muted">{escape(h["note"][:300])}</div>' if h["note"] else ""
         out.append(f'<div class="card urgent">🙋 {_a(h["url"], f"{h["repo"]} #{h["number"]}: {h["title"]}")} '
@@ -236,6 +264,8 @@ def render(view: View) -> str:
         out.append(f'<div class="card urgent">🔑 {escape(t)}</div>')
     # 2. Trabajo en curso
     out.append("<h2>🛠️ Trabajo en curso</h2>")
+    out.append(_err(view, "github"))
+    out.append(_err(view, "dispatcher"))
     for repo, rows in sorted(view.work.items()):
         out.append(f'<div class="card"><b>{escape(repo)}</b><table>')
         for r in rows:
