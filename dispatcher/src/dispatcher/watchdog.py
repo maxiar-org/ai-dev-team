@@ -82,7 +82,8 @@ def plan_ops(
 
 
 def run_checks(
-    canvas_url: str, api_key: str, heartbeat_path: Path, tunnel_ready_url: str, disk_path: str, now: float
+    canvas_url: str, api_key: str, heartbeat_path: Path, tunnel_ready_url: str, disk_path: str, now: float,
+    coolify_health_url: str = "",
 ) -> list[Check]:
     checks: list[Check] = []
     try:
@@ -109,6 +110,12 @@ def run_checks(
             checks.append(Check("tunel", resp.status_code == 200, f"HTTP {resp.status_code}"))
         except httpx.HTTPError as exc:
             checks.append(Check("tunel", False, f"{type(exc).__name__}: {exc}"))
+    if coolify_health_url:
+        try:
+            resp = httpx.get(coolify_health_url, timeout=15)
+            checks.append(Check("coolify", resp.status_code == 200, f"HTTP {resp.status_code}"))
+        except httpx.HTTPError as exc:
+            checks.append(Check("coolify", False, f"{type(exc).__name__}: {exc}"))
     try:
         usage = shutil.disk_usage(disk_path)
         used = usage.used / usage.total
@@ -157,6 +164,7 @@ def main() -> None:
         env.get("CANVAS_URL", "http://canvas:8000"), env["CANVAS_API_KEY"],
         Path(env.get("HEARTBEAT_PATH", "/state/heartbeat")), env.get("TUNNEL_READY_URL", ""),
         env.get("DISK_PATH", "/"), time.time(),
+        coolify_health_url=env.get("COOLIFY_HEALTH_URL", ""),
     )
     expiries = {
         "GITHUB_TOKEN": parse_expiry(env.get("GITHUB_TOKEN_EXPIRES")),

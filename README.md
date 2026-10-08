@@ -79,3 +79,16 @@ Todo corre en Docker Compose en la mini-PC. En el host solo está Docker.
 - **Alertas:** el `watchdog` abre issues `[ops]` en `ai-dev-team` si se cae Canvas, el dispatcher, el túnel o el disco pasa el 85 %, y los cierra solo cuando se recuperan. También avisa 14 días antes de que venzan los tokens (`GITHUB_TOKEN_EXPIRES`, `CLAUDE_TOKEN_EXPIRES`).
 - **Mudar a otra máquina:** instalar Docker, copiar el repo **exactamente en `/opt/ai-dev-team`**, el `.env` y los volúmenes, y ejecutar `docker compose up -d`. La ruta es fija porque el operador ejecuta `docker compose` desde su contenedor y el daemon del host resuelve los bind mounts con esa ruta. Después, aplica los permisos de `pilot/` (ver Problemas conocidos).
 
+## Coolify y previews
+
+Coolify (instalado en `/data/coolify`, con su panel en https://coolify.maxiar.dev detrás de Access) despliega cada proyecto:
+- **Versión estable:** `https://<proyecto>.maxiar.dev`, que se redespliega en cada merge a `main`.
+- **Previews por PR:** `https://<proyecto>-pr-N.maxiar.dev`, detrás de Access. Se crean al abrir el PR y se borran al cerrarlo.
+
+**Sumar un proyecto:**
+1. En Coolify, crea la aplicación desde la GitHub App, con el build pack Dockerfile o Docker Compose.
+2. Ponle el dominio `http://<p>.maxiar.dev` y activa Preview Deployments con la URL `http://<p>-pr-{{pr_id}}.maxiar.dev`.
+3. Si el comodín general de Access no cubre el proyecto, crea en Cloudflare Access la aplicación `<p>-pr-*.maxiar.dev`.
+
+**Mudanza:** copia `/data/coolify` a la máquina nueva y corre el instalador oficial; los puertos de Coolify van solo en `127.0.0.1`.
+

@@ -110,3 +110,23 @@ def test_future_or_infinite_heartbeat_fails(tmp_path):
             hb.write_text(value)
             checks = {c.name: c for c in run_checks("http://canvas:8000", "k", hb, "", str(tmp_path), now=1000.0)}
             assert not checks["dispatcher"].ok, value
+
+
+def test_coolify_check_reports_health(tmp_path):
+    hb = tmp_path / "hb"
+    hb.write_text("1000")
+    with respx.mock:
+        respx.get("http://canvas:8000/api/conversations/count").respond(200, json=0)
+        respx.get("http://coolify:8080/api/health").respond(502)
+        checks = {c.name: c for c in run_checks("http://canvas:8000", "k", hb, "", str(tmp_path), now=1000.0,
+                                                coolify_health_url="http://coolify:8080/api/health")}
+    assert not checks["coolify"].ok and "502" in checks["coolify"].detail
+
+
+def test_coolify_check_absent_when_not_configured(tmp_path):
+    hb = tmp_path / "hb"
+    hb.write_text("1000")
+    with respx.mock:
+        respx.get("http://canvas:8000/api/conversations/count").respond(200, json=0)
+        checks = {c.name for c in run_checks("http://canvas:8000", "k", hb, "", str(tmp_path), now=1000.0)}
+    assert "coolify" not in checks
