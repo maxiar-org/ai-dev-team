@@ -1,7 +1,7 @@
 from datetime import date
 
 from dispatcher.models import Item
-from dispatcher.view import AppInfo, PRInfo, Snapshot, build_view, merge_order
+from dispatcher.view import AppInfo, PRInfo, Snapshot, View, build_view, merge_order, render
 from dispatcher.watchdog import Check
 
 NOW = 1_791_500_000.0  # 2026-10-08 aprox.
@@ -83,3 +83,21 @@ def test_usage_counts_last_24h_and_7d():
     u = {x["engine"]: x for x in build_view(Snapshot(now=NOW, metrics=rows)).usage}
     assert (u["codex"]["tasks_24h"], u["codex"]["tasks_7d"], u["codex"]["minutes_7d"]) == (1, 2, 8.0)
     assert "claude" not in u
+
+
+def test_render_sections_and_empty_state():
+    html = render(View(updated=NOW))
+    for title in ("Qué espera de ti", "Trabajo en curso", "Despliegues", "Salud y consumo", "Resumen del operador"):
+        assert title in html
+    assert "Nada pendiente" in html and 'http-equiv="refresh"' in html and "hace __EDAD__ s" in html
+
+
+def test_render_escapes_external_text():
+    v = View(updated=NOW, waiting=[{"repo": "qr", "number": 1, "title": "<script>x</script>", "url": "https://g/1", "ci": "success",
+                                    "clean": True, "preview": None, "issue": None, "warnings": []}])
+    html = render(v)
+    assert "<script>x</script>" not in html and "&lt;script&gt;" in html
+
+
+def test_render_shows_source_errors():
+    assert "sin datos" in render(View(updated=NOW, errors={"coolify": "ConnectError"}))
