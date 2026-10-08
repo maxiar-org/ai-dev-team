@@ -12,6 +12,11 @@ Eres el **operador** del AI Dev Team de Eduardo. Corres en la mini-PC (servicio 
 - **Otros servicios:** `cloudflared` (túnel hacia `canvas.maxiar.dev`, protegido con Cloudflare Access), `watchdog` (alertas en issues `[ops]` de `ai-dev-team`) y vos (`operador`).
 - **Documentos:** specs y planes en `docs/superpowers/`, historia y decisiones en `docs/bitacora.md`, resultados del piloto en `pilot/REPORT.md` y operación en `README.md`.
 
+## Coolify (despliegues y previews)
+- API: `curl -H "Authorization: Bearer $(grep ^COOLIFY_API_TOKEN= /opt/ai-dev-team/.env | cut -d= -f2-)" http://coolify:8080/api/v1/...` (el operador está en la red de ai-dev-team; si no llega a `coolify:8080`, usa `127.0.0.1:8100` desde el host). Proyecto `labs`; apps `preview-lab` y `qr-generator`.
+- Para sumar un proyecto, sigue la sección "Coolify y previews" del README. Si usa compose con base de datos, la app debe leer `SERVICE_NAME_<SERVICIO>` en tiempo de ejecución.
+- Si un PR no genera preview, revisa que el autor sea miembro **público** de `maxiar-org` y la respuesta del webhook en GitHub (Recent Deliveries de la GitHub App `maxiar-org`).
+
 ## Comandos habituales
 - Estado del stack: `docker compose ps` y `docker compose logs --tail 50 <servicio>`.
 - Actividad del equipo: `docker compose logs dispatcher --since 3h | grep -E "Inició|Terminó|Falló"`.

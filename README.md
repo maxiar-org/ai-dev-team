@@ -90,5 +90,11 @@ Coolify (instalado en `/data/coolify`, con su panel en https://coolify.maxiar.de
 2. Ponle el dominio `http://<p>.maxiar.dev` y activa Preview Deployments con la URL `http://<p>-pr-{{pr_id}}.maxiar.dev`.
 3. Si el comodín general de Access no cubre el proyecto, crea en Cloudflare Access la aplicación `<p>-pr-*.maxiar.dev`.
 
+**Reglas aprendidas en la prueba acotada (fase 4b):**
+- **Servicios en previews de compose:** Coolify los renombra a `<servicio>-pr-N`. La interpolación del compose (`${...}`) **no** ve el nombre nuevo, así que la app tiene que leer en tiempo de ejecución las variables que inyecta Coolify, `SERVICE_NAME_<SERVICIO>` (por ejemplo `SERVICE_NAME_POSTGRES`), con el nombre normal como valor por defecto. Ejemplo en `maxiar-org/preview-lab` (`app.py`).
+- **Autores de PRs:** Coolify solo despliega previews de PRs cuyo autor figura como `OWNER`, `MEMBER` o `COLLABORATOR`. La membresía en `maxiar-org` de Eduardo y del bot tiene que ser **pública**; si no, los PRs se ignoran sin dejar error.
+- **Access:** no acepta dos comodines en un nombre (`*-pr-*`), así que se crea una aplicación de Access por proyecto: `<p>-pr-*`.
+- **Puertos de Coolify:** se definen en `/data/coolify/source/docker-compose.custom.yml` (Coolify lo incluye en cada actualización) y en `/data/coolify/proxy/docker-compose.yml` (proxy en `127.0.0.1`).
+
 **Mudanza:** copia `/data/coolify` a la máquina nueva y corre el instalador oficial; los puertos de Coolify van solo en `127.0.0.1`.
 
