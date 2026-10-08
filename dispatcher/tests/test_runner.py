@@ -274,3 +274,20 @@ def test_heartbeat_written_only_after_successful_cycle(tmp_path, cfg):
         d.run_once()
     assert hb.read_text() == "10000.0"
     assert not list(tmp_path.glob("hb.*"))  # escritura atómica: no quedan temporales
+
+
+def test_metrics_failure_does_not_block_finishing(tmp_path, cfg):
+    import dataclasses
+
+    bad = tmp_path / "soy-un-directorio"
+    bad.mkdir()
+    d, gh, cv, ws, clock = make(tmp_path, dataclasses.replace(cfg, metrics_path=bad))
+    gh.add_item(Item(REPO, 7, "pr", "WA", "", frozenset({"agent:review", "engine:codex"}), "agent/3-wa"))
+    d.run_once()
+    cv.status["conv1"] = "finished"
+    cv.responses["conv1"] = "VEREDICTO: APROBADO"
+    d.run_once()
+    assert StateStore(cfg.state_path).load().active == {}
+    assert gh.labels(7) == {"engine:codex", "agent:qa"}
+    d.run_once()  # no repite el cierre
+    assert len(cv.created) == 2  # el ciclo siguiente arrancó QA, no se trabó

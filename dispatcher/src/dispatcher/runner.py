@@ -252,7 +252,11 @@ class Dispatcher:
         # Siempre se libera la tarea: si no, su motor queda bloqueado para siempre.
         state.review_rounds[task.key] = outcome.review_rounds
         state.qa_rounds[task.key] = outcome.qa_rounds
-        self.metrics.append(task, a.status, outcome.result, a.conv, now)
+        try:
+            self.metrics.append(task, a.status, outcome.result, a.conv, now)
+        except Exception:
+            # Las métricas nunca deben trabar el flujo: si no se pueden escribir, se registra y se sigue.
+            log.exception("No pude registrar las métricas de %s", task.key)
         state.active.pop(task.key, None)
         log.info("Terminó %s %s: %s (%s)", task.role, task.key, outcome.result, a.status)
 
