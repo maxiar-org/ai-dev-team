@@ -80,3 +80,24 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
 - **Vencimientos registrados:** token del bot el 2027-01-02 y token de Claude el 2027-10-04. El watchdog avisa 14 días antes.
 - **Pendiente:** backups de la VM (`vzdump` en Proxmox).
 - **Siguiente:** 4b (Coolify y previews), 4c (eventos de GitHub) y 4d (vista de estado).
+
+## 2026-10-08: fase 4b cerrada (Coolify y previews por PR)
+- **Coolify 4.4.2** en `/data/coolify` (segundo proyecto Compose). Panel en `coolify.maxiar.dev`, con Access y bypass para `/webhooks`. Todos sus puertos están en `127.0.0.1` (`docker-compose.custom.yml` más el proxy editado). Las apps se crean por la API de Coolify (`COOLIFY_API_TOKEN` en `.env`).
+- **Criterios de éxito:**
+
+  | # | Criterio | Resultado |
+  |---|---|---|
+  | 1 | Prueba acotada `preview-lab` (compose con app, Postgres y Redis) | ✅ estable en `preview-lab.maxiar.dev`; la preview `preview-lab-pr-1` con su propia base (el contador arrancó en 1 contra 8 en `main`); link en el PR; limpieza en 10 s |
+  | 2 | `qr.maxiar.dev` sirve `main` | ✅ |
+  | 3 | Previews de `qr-generator` | ✅ `qr-pr-23` en 123 s, con Access, link en el PR y limpieza en 10 s |
+  | 4 | Nada de Coolify en la LAN | ✅ |
+  | 5 | `[ops] coolify` | ✅ alerta en 147 s; `qr.maxiar.dev` siguió respondiendo 200 con Coolify caído; cierre automático 104 s después de levantarlo |
+
+- **Problemas encontrados y resueltos:**
+  - El panel de Coolify chocaba con Canvas en el puerto 8000 → pasó al `127.0.0.1:8100` con `docker-compose.custom.yml`.
+  - El dominio de Coolify estaba vacío, así que la GitHub App quedó con el webhook apuntando a una URL local → se configuró `https://coolify.maxiar.dev` y se corrigió la URL del webhook en GitHub.
+  - **Membresía privada en la organización:** Coolify ignora sin error los PRs cuyo autor no aparece como miembro. La membresía de Eduardo ya es pública; **falta la del bot** (requiere su login web; hay que recuperar su contraseña y activarle el 2FA).
+  - **Previews de compose:** los servicios se renombran a `<svc>-pr-N`, y la app tiene que leer `SERVICE_NAME_<SVC>` en tiempo de ejecución (documentado en el README).
+  - Access no acepta dos comodines en un nombre → una aplicación de Access por proyecto.
+- **Tokens a rotar:** se pegaron en la conversación el `TUNNEL_TOKEN`, el `CLAUDE_CODE_OAUTH_TOKEN` y el `COOLIFY_API_TOKEN`.
+- **Siguiente:** 4c (eventos de GitHub) y 4d (vista de estado). QA sobre las previews queda para cuando haya un proyecto con base de datos.
