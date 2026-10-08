@@ -80,8 +80,33 @@ def test_github_errors_do_not_crash_watchdog_cycle():
     assert wd.run_once() == []
 
 
-def test_watchdog_cycle_creates_issue_with_ops_label():
+def test_watchdog_needs_two_consecutive_failures_before_opening():
     gh = FakeGH()
-    wd = Watchdog(gh, "ai-dev-team", lambda: [Check("canvas", False, "x")], {}, today=lambda: TODAY)
-    wd.run_once()
+    results = iter([[Check("canvas", False, "x")], [Check("canvas", True)], [Check("canvas", False, "x")], [Check("canvas", False, "x")]])
+    wd = Watchdog(gh, "ai-dev-team", lambda: next(results), {}, today=lambda: TODAY)
+    wd.run_once()  # primera falla: puede ser un arranque, no alerta
+    wd.run_once()  # se recuperó
+    wd.run_once()  # falla otra vez: racha 1
+    assert gh.created == []
+    wd.run_once()  # segunda falla seguida: alerta
     assert gh.created == ["[ops] canvas"]
+
+
+def test_check_errors_do_not_abort_other_checks(tmp_path):
+    hb_dir = tmp_path / "soy-un-directorio"
+    hb_dir.mkdir()
+    with respx.mock:
+        respx.get("http://canvas:8000/api/conversations/count").respond(200, json=0)
+        checks = {c.name: c for c in run_checks("http://canvas:8000", "k", hb_dir, "", str(tmp_path / "no-existe"), now=1000.0)}
+    assert checks["canvas"].ok
+    assert not checks["dispatcher"].ok and not checks["disco"].ok
+
+
+def test_future_or_infinite_heartbeat_fails(tmp_path):
+    hb = tmp_path / "hb"
+    with respx.mock:
+        respx.get("http://canvas:8000/api/conversations/count").respond(200, json=0)
+        for value in ("inf", "5000.0"):
+            hb.write_text(value)
+            checks = {c.name: c for c in run_checks("http://canvas:8000", "k", hb, "", str(tmp_path), now=1000.0)}
+            assert not checks["dispatcher"].ok, value

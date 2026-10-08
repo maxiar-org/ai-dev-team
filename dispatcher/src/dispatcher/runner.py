@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import replace
 from collections.abc import Callable
@@ -94,8 +95,11 @@ class Dispatcher:
                 log.exception("Falló la sincronización del tablero")
         if self.cfg.heartbeat_path is not None:
             # El watchdog usa este latido para saber que el dispatcher completa ciclos.
-            self.cfg.heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
-            self.cfg.heartbeat_path.write_text(str(now))
+            hb = self.cfg.heartbeat_path
+            hb.parent.mkdir(parents=True, exist_ok=True)
+            tmp = hb.with_name(hb.name + ".tmp")
+            tmp.write_text(str(now))
+            os.replace(tmp, hb)  # atómico: el watchdog nunca lee un archivo a medio escribir
         return actions
 
     def _sync_board(self, items: list[Item]) -> None:

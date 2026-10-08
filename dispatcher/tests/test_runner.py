@@ -1,3 +1,5 @@
+import pytest
+
 from dispatcher.metrics import MetricsLog
 from dispatcher.models import Comment, Item
 from dispatcher.runner import Dispatcher
@@ -268,8 +270,7 @@ def test_heartbeat_written_only_after_successful_cycle(tmp_path, cfg):
     assert hb.read_text() == "10000.0"
     clock.now += 60
     gh.list_open_items = lambda repo: (_ for _ in ()).throw(RuntimeError("GitHub caído"))
-    try:
+    with pytest.raises(RuntimeError):
         d.run_once()
-    except RuntimeError:
-        pass
     assert hb.read_text() == "10000.0"
+    assert not list(tmp_path.glob("hb.*"))  # escritura atómica: no quedan temporales

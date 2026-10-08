@@ -16,9 +16,12 @@ RUN apt-get update \
 
 ARG UID=1001
 ARG GID=1001
-ARG DOCKER_GID=999
-RUN groupadd -g ${GID} aidev && useradd -m -u ${UID} -g ${GID} -s /bin/bash aidev \
- && (getent group docker || groupadd -g ${DOCKER_GID} docker) && usermod -aG docker aidev
+# La imagen base trae el usuario node (1000:1000); se elimina para que UID/GID puedan ser 1000.
+# El acceso a docker.sock se da con group_add en el compose (GID del grupo docker del host).
+RUN userdel -r node \
+ && groupadd -o -g ${GID} aidev && useradd -m -o -u ${UID} -g ${GID} -s /bin/bash aidev
+# Versión fija y sin autoupdate: el binario es de root y el usuario aidev no puede actualizarlo.
+ENV DISABLE_AUTOUPDATER=1
 COPY --chmod=755 start.sh /usr/local/bin/operador-start
 USER aidev
 WORKDIR /opt/ai-dev-team

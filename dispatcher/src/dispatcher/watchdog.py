@@ -4,6 +4,7 @@ issues [ops] en GitHub. Corre como servicio del compose (python -m dispatcher.wa
 from __future__ import annotations
 
 import logging
+import math
 import os
 import shutil
 import time
@@ -19,6 +20,7 @@ from .github import GitHubClient
 log = logging.getLogger("watchdog")
 HEARTBEAT_MAX_AGE = 300
 DISK_MAX_USED = 0.85
+FAILURES_TO_ALERT = 2
 
 
 @dataclass(frozen=True)
@@ -89,21 +91,30 @@ def run_checks(
     except httpx.HTTPError as exc:
         checks.append(Check("canvas", False, f"{type(exc).__name__}: {exc}"))
     try:
-        age = now - float(heartbeat_path.read_text().strip())
-        checks.append(Check("dispatcher", age < HEARTBEAT_MAX_AGE, f"último ciclo hace {int(age)} s"))
+        beat = float(heartbeat_path.read_text().strip())
+        age = now - beat
+        if not math.isfinite(beat) or age < 0:
+            checks.append(Check("dispatcher", False, f"el latido {heartbeat_path} tiene un valor inválido: {beat}"))
+        else:
+            checks.append(Check("dispatcher", age < HEARTBEAT_MAX_AGE, f"último ciclo hace {int(age)} s"))
     except FileNotFoundError:
         checks.append(Check("dispatcher", False, f"el latido {heartbeat_path} no existe"))
     except ValueError:
         checks.append(Check("dispatcher", False, f"el latido {heartbeat_path} es ilegible"))
+    except OSError as exc:
+        checks.append(Check("dispatcher", False, f"no pude leer el latido: {exc}"))
     if tunnel_ready_url:
         try:
             resp = httpx.get(tunnel_ready_url, timeout=15)
             checks.append(Check("tunel", resp.status_code == 200, f"HTTP {resp.status_code}"))
         except httpx.HTTPError as exc:
             checks.append(Check("tunel", False, f"{type(exc).__name__}: {exc}"))
-    usage = shutil.disk_usage(disk_path)
-    used = usage.used / usage.total
-    checks.append(Check("disco", used < DISK_MAX_USED, f"uso {used:.0%} de {usage.total // 2**30} GB"))
+    try:
+        usage = shutil.disk_usage(disk_path)
+        used = usage.used / usage.total
+        checks.append(Check("disco", used < DISK_MAX_USED, f"uso {used:.0%} de {usage.total // 2**30} GB"))
+    except OSError as exc:
+        checks.append(Check("disco", False, f"no pude medir el disco en {disk_path}: {exc}"))
     return checks
 
 
@@ -111,9 +122,14 @@ class Watchdog:
     def __init__(self, github, repo: str, checker: Callable[[], list[Check]], expiries: Mapping[str, date | None],
                  today: Callable[[], date] = date.today):
         self.github, self.repo, self.checker, self.expiries, self.today = github, repo, checker, expiries, today
+        self.failures: dict[str, int] = {}
 
     def run_once(self) -> list[OpenOps | CloseOps]:
-        checks = self.checker()
+        raw = self.checker()
+        for check in raw:
+            self.failures[check.name] = 0 if check.ok else self.failures.get(check.name, 0) + 1
+        # Una sola falla (por ejemplo, durante un arranque) no alerta: hacen falta dos ciclos seguidos.
+        checks = [c for c in raw if c.ok or self.failures[c.name] >= FAILURES_TO_ALERT]
         try:
             open_issues = self.github.list_open_issue_titles(self.repo, "ops")
         except Exception:
@@ -128,7 +144,7 @@ class Watchdog:
                     self.github.close_issue(self.repo, op.number, op.comment)
             except Exception:
                 log.exception("Falló %s", op)
-        for check in checks:
+        for check in raw:
             log.info("%s %s %s", "OK " if check.ok else "MAL", check.name, check.detail)
         return ops
 
