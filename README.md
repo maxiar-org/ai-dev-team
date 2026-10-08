@@ -65,7 +65,7 @@ docker compose logs -f dispatcher
 ## Problemas conocidos
 
 - **Codex deja de autenticar:** el login vive en el volumen `codex-home` y se crea desde `CODEX_AUTH_JSON` solo la primera vez. Para usar un login nuevo: actualiza `.env`, ejecuta `docker compose down`, luego `docker volume rm ai-dev-team_codex-home`, y por último `docker compose up -d`.
-- **En la mini-PC (Linux), `./pilot` tiene que poder escribirlo el UID 10001:** `sudo chown 10001:10001 pilot`.
+- **En Linux, `./pilot` tiene que poder escribirlo el dispatcher (UID 10001) y el usuario `aidev`:** `sudo chown -R 10001:$(id -g aidev) pilot && sudo chmod 2775 pilot && sudo chmod 664 pilot/*`.
 
 ## Mini-PC y operador
 
@@ -77,5 +77,5 @@ Todo corre en Docker Compose en la mini-PC. En el host solo está Docker.
 - **Primer login del operador:** `docker compose exec -it operador claude` (login por código con tu cuenta personal) y después `docker compose restart operador`. Para `gh`: `docker compose exec -it operador gh auth login` y luego `docker compose exec -it operador gh auth refresh -s read:project` (para leer el tablero).
 - **Instrucciones del operador:** viven en `operador/claude/` (`CLAUDE.md` y skills) y se copian a su HOME cada vez que arranca. No van en la raíz del repo, para que no las lean los agentes.
 - **Alertas:** el `watchdog` abre issues `[ops]` en `ai-dev-team` si se cae Canvas, el dispatcher, el túnel o el disco pasa el 85 %, y los cierra solo cuando se recuperan. También avisa 14 días antes de que venzan los tokens (`GITHUB_TOKEN_EXPIRES`, `CLAUDE_TOKEN_EXPIRES`).
-- **Mudar a otra máquina:** instalar Docker, copiar el repo **exactamente en `/opt/ai-dev-team`**, el `.env` y los volúmenes, y ejecutar `docker compose up -d`. La ruta es fija porque el operador ejecuta `docker compose` desde su contenedor y el daemon del host resuelve los bind mounts con esa ruta.
+- **Mudar a otra máquina:** instalar Docker, copiar el repo **exactamente en `/opt/ai-dev-team`**, el `.env` y los volúmenes, y ejecutar `docker compose up -d`. La ruta es fija porque el operador ejecuta `docker compose` desde su contenedor y el daemon del host resuelve los bind mounts con esa ruta. Después, aplica los permisos de `pilot/` (ver Problemas conocidos).
 
