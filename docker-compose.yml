@@ -88,6 +88,36 @@ services:
     volumes:
       - dispatcher-state:/state:ro
 
+  # Vista de estado (estado.maxiar.dev, detrás de Access): solo lectura, sin puertos publicados.
+  estado:
+    image: ai-dev-team-dispatcher
+    pull_policy: never  # la construye el servicio dispatcher
+    restart: unless-stopped
+    depends_on:
+      - dispatcher
+    entrypoint: ["python", "-m", "dispatcher.estado"]
+    networks: [default, coolify]
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_ORG: ${GITHUB_ORG:-maxiar-org}
+      REPOS: ${REPOS}
+      BOT_LOGIN: ${BOT_LOGIN:-maxiar-ai-dev-team-bot}
+      OPS_REPO: ai-dev-team
+      CANVAS_URL: http://canvas:8000
+      CANVAS_API_KEY: ${CANVAS_API_KEY}
+      HEARTBEAT_PATH: /state/heartbeat
+      STATE_PATH: /state/state.json
+      METRICS_PATH: /pilot/metrics.csv
+      TUNNEL_READY_URL: http://cloudflared:2000/ready
+      COOLIFY_HEALTH_URL: ${COOLIFY_HEALTH_URL:-}
+      COOLIFY_API_URL: http://coolify:8080/api/v1
+      COOLIFY_API_TOKEN: ${COOLIFY_API_TOKEN:-}
+      GITHUB_TOKEN_EXPIRES: ${GITHUB_TOKEN_EXPIRES:-}
+      CLAUDE_TOKEN_EXPIRES: ${CLAUDE_TOKEN_EXPIRES:-}
+    volumes:
+      - dispatcher-state:/state:ro
+      - ./pilot:/pilot:ro
+
   operador:
     build:
       context: ./operador
