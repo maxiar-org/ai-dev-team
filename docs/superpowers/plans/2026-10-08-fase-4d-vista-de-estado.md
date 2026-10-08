@@ -231,7 +231,7 @@ NOW = 1_791_500_000.0  # 2026-10-08 aprox.
 
 def pr(n, *labels, body="", ref=None, clean=True, ci="success", files=()):
     return PRInfo("qr", n, f"PR {n}", f"https://github.com/o/qr/pull/{n}", frozenset(labels), body,
-                  ref or f"agent/{n}-x", "clean" if clean else "dirty", ci, tuple(files))
+                  ref or "feat/x", "clean" if clean else "dirty", ci, tuple(files))
 
 
 def issue(n, *labels, body=""):
