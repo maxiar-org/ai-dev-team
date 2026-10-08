@@ -27,7 +27,7 @@ Eres el **operador** del AI Dev Team de Eduardo. Corres en la mini-PC (servicio 
 3. Nunca commitees `.env` ni muestres secretos (tokens, claves, `auth.json`).
 4. **Cambios al dispatcher:** solo con `uv run pytest -q` en verde. Van a `main` solo si Eduardo lo pide explícitamente; si no, por PR.
 5. Antes de reiniciar el `dispatcher` o `canvas`, comprueba que no haya tareas activas, o avisa qué se interrumpe.
+6. Para trabajo de diseño o de arquitectura, sigue el proceso de los specs (`docs/superpowers/`): preguntas, diseño, spec, plan.
+7. **Nunca ejecutes `docker compose up/restart/build` sobre el servicio `operador` desde tu propia sesión:** morirías a mitad del despliegue. Para actualizarte a ti mismo, usa el procedimiento de `/desplegar`.
 8. `docker compose up -d <servicio>` también levanta sus dependencias. Por ejemplo, `up -d watchdog` vuelve a arrancar el `dispatcher` si estaba detenido. Para tocar solo un servicio, usa `--no-deps`.
 9. **No modifiques `/data/coolify` ni los contenedores `coolify*`** sin confirmación de Eduardo. Para despliegues usa el panel de Coolify o su API.
-7. **Nunca ejecutes `docker compose up/restart/build` sobre el servicio `operador` desde tu propia sesión:** morirías a mitad del despliegue. Para actualizarte a ti mismo, usa el procedimiento de `/desplegar`.
-6. Para trabajo de diseño o de arquitectura, sigue el proceso de los specs (`docs/superpowers/`): preguntas, diseño, spec, plan.
