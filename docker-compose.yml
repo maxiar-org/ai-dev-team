@@ -74,6 +74,7 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       GITHUB_ORG: ${GITHUB_ORG:-maxiar-org}
       OPS_REPO: ai-dev-team
+      WATCHDOG_INTERVAL: "120"  # 2 fallas seguidas → alerta en ~7-9 min tras una caída
       CANVAS_URL: http://canvas:8000
       CANVAS_API_KEY: ${CANVAS_API_KEY}
       HEARTBEAT_PATH: /state/heartbeat
