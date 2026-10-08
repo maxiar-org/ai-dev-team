@@ -127,6 +127,19 @@ class GitHubClient:
         )
         resp.raise_for_status()
 
+    def list_open_issue_titles(self, repo: str, label: str) -> dict[str, int]:
+        raw = self._paginate(f"{self._repo(repo)}/issues", {"state": "open", "labels": label, "per_page": 100})
+        return {i["title"]: i["number"] for i in raw if "pull_request" not in i}
+
+    def create_issue(self, repo: str, title: str, body: str, labels: Iterable[str]) -> None:
+        resp = self.http.post(f"{self._repo(repo)}/issues", json={"title": title, "body": body, "labels": list(labels)})
+        resp.raise_for_status()
+
+    def close_issue(self, repo: str, number: int, comment: str) -> None:
+        self.comment(repo, number, comment)
+        resp = self.http.patch(f"{self._repo(repo)}/issues/{number}", json={"state": "closed"})
+        resp.raise_for_status()
+
     def get_merge_state(self, repo: str, number: int) -> str | None:
         """mergeable_state del PR ("dirty" = conflictos; None mientras GitHub lo calcula)."""
         resp = self.http.get(f"{self._repo(repo)}/pulls/{number}")

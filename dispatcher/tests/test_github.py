@@ -117,3 +117,19 @@ def test_get_merge_state(gh):
     route("GET", "/pulls/12").respond(json={"mergeable_state": None})
     assert gh.get_merge_state("qr", 11) == "dirty"
     assert gh.get_merge_state("qr", 12) is None
+
+
+@respx.mock
+def test_ops_issue_helpers(gh):
+    respx.route(method="GET", host=HOST, path="/repos/maxiar-org/qr/issues").respond(
+        json=[{"number": 4, "title": "[ops] canvas"}, {"number": 5, "title": "PR", "pull_request": {}}]
+    )
+    created = route("POST", "/issues").respond(201, json={"number": 6})
+    commented = route("POST", "/issues/4/comments").respond(201, json={})
+    closed = route("PATCH", "/issues/4").respond(200, json={})
+    assert gh.list_open_issue_titles("qr", "ops") == {"[ops] canvas": 4}
+    gh.create_issue("qr", "[ops] x", "cuerpo", ["ops"])
+    gh.close_issue("qr", 4, "recuperado")
+    assert json.loads(created.calls.last.request.content) == {"title": "[ops] x", "body": "cuerpo", "labels": ["ops"]}
+    assert json.loads(commented.calls.last.request.content) == {"body": "recuperado"}
+    assert json.loads(closed.calls.last.request.content) == {"state": "closed"}
