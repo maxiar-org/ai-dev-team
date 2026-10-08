@@ -52,3 +52,8 @@ def test_phase2_engines_and_docs_only_repos():
     assert (cfg.qa_engine, cfg.docs_engine, cfg.docs_only_repos) == ("claude", "codex", ("ai-dev-team", "x"))
     with pytest.raises(ConfigError, match="QA_ENGINE"):
         Config.from_env({**BASE, "QA_ENGINE": "gemini"})
+
+
+def test_heartbeat_path_default_and_disable():
+    assert str(Config.from_env(BASE).heartbeat_path) == "/state/heartbeat"
+    assert Config.from_env({**BASE, "HEARTBEAT_PATH": ""}).heartbeat_path is None

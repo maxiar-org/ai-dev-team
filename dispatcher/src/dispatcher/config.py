@@ -42,6 +42,7 @@ class Config:
     qa_engine: str = "codex"
     docs_engine: str = "claude"
     docs_only_repos: tuple[str, ...] = ()
+    heartbeat_path: Path | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -99,5 +100,6 @@ class Config:
             project_number=integer("PROJECT_NUMBER", 0) or None,
             qa_engine=engine_var("QA_ENGINE", "codex"),
             docs_engine=engine_var("DOCS_ENGINE", "claude"),
+            heartbeat_path=Path(hb) if (hb := env.get("HEARTBEAT_PATH", "/state/heartbeat").strip()) else None,
             docs_only_repos=tuple(r.strip() for r in env.get("DOCS_ONLY_REPOS", "").split(",") if r.strip()),
         )

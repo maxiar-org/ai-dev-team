@@ -92,6 +92,10 @@ class Dispatcher:
                 self._sync_board(items)
             except Exception:
                 log.exception("Falló la sincronización del tablero")
+        if self.cfg.heartbeat_path is not None:
+            # El watchdog usa este latido para saber que el dispatcher completa ciclos.
+            self.cfg.heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
+            self.cfg.heartbeat_path.write_text(str(now))
         return actions
 
     def _sync_board(self, items: list[Item]) -> None:

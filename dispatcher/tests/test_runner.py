@@ -256,3 +256,20 @@ def test_docs_only_repo_notice_is_posted_once(tmp_path, cfg):
     d.run_once()
     assert cv.created == []
     assert len(gh.posted) == 1 and "documentación" in gh.posted[0][1]
+
+
+def test_heartbeat_written_only_after_successful_cycle(tmp_path, cfg):
+    import dataclasses
+
+    hb = tmp_path / "hb"
+    cfg2 = dataclasses.replace(cfg, heartbeat_path=hb)
+    d, gh, cv, ws, clock = make(tmp_path, cfg2)
+    d.run_once()
+    assert hb.read_text() == "10000.0"
+    clock.now += 60
+    gh.list_open_items = lambda repo: (_ for _ in ()).throw(RuntimeError("GitHub caído"))
+    try:
+        d.run_once()
+    except RuntimeError:
+        pass
+    assert hb.read_text() == "10000.0"
