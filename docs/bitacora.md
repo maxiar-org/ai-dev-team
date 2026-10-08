@@ -101,3 +101,8 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
   - Access no acepta dos comodines en un nombre → una aplicación de Access por proyecto.
 - **Tokens a rotar:** se pegaron en la conversación el `TUNNEL_TOKEN`, el `CLAUDE_CODE_OAUTH_TOKEN` y el `COOLIFY_API_TOKEN`.
 - **Siguiente:** 4c (eventos de GitHub) y 4d (vista de estado). QA sobre las previews queda para cuando haya un proyecto con base de datos.
+
+## Fase futura de mejoras (backlog)
+- **4c, eventos de GitHub por webhook** (en lugar del polling cada 60 s): se posterga por decisión de Eduardo (2026-10-08), porque la latencia actual no molesta. Hay base para hacerlo: el túnel y los webhooks ya funcionan con Coolify.
+- **QA sobre las previews desplegadas** (service token de Access), cuando haya un proyecto con base de datos.
+- **Mejoras menores diferidas** de las revisiones de código (ver ledgers y bitácoras de cada fase).
