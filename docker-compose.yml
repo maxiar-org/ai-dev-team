@@ -40,6 +40,7 @@ services:
       QA_ENGINE: ${QA_ENGINE:-codex}
       DOCS_ENGINE: ${DOCS_ENGINE:-claude}
       DOCS_ONLY_REPOS: ${DOCS_ONLY_REPOS:-}
+      HEARTBEAT_PATH: /state/heartbeat
       CANVAS_URL: http://canvas:8000
       CANVAS_API_KEY: ${CANVAS_API_KEY}
       PROJECTS_DIR: /projects
@@ -52,8 +53,54 @@ services:
       - ./roles:/app/roles:ro
       - ./pilot:/pilot
 
+  cloudflared:
+    image: cloudflare/cloudflared:2026.9.3
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 run
+    environment:
+      # Si falta, cloudflared no conecta y el watchdog abre [ops] tunel.
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      - canvas
+
+  watchdog:
+    image: ai-dev-team-dispatcher
+    pull_policy: never  # la construye el servicio dispatcher
+    restart: unless-stopped
+    depends_on:
+      - dispatcher
+    entrypoint: ["python", "-m", "dispatcher.watchdog"]
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_ORG: ${GITHUB_ORG:-maxiar-org}
+      OPS_REPO: ai-dev-team
+      CANVAS_URL: http://canvas:8000
+      CANVAS_API_KEY: ${CANVAS_API_KEY}
+      HEARTBEAT_PATH: /state/heartbeat
+      TUNNEL_READY_URL: http://cloudflared:2000/ready
+      DISK_PATH: /
+      GITHUB_TOKEN_EXPIRES: ${GITHUB_TOKEN_EXPIRES:-}
+      CLAUDE_TOKEN_EXPIRES: ${CLAUDE_TOKEN_EXPIRES:-}
+    volumes:
+      - dispatcher-state:/state:ro
+
+  operador:
+    build:
+      context: ./operador
+      args:
+        UID: ${AIDEV_UID:-1001}
+        GID: ${AIDEV_GID:-1001}
+        DOCKER_GID: ${DOCKER_GID:-999}
+    restart: unless-stopped
+    init: true
+    volumes:
+      - operador-home:/home/aidev
+      - .:/opt/ai-dev-team
+      - /var/run/docker.sock:/var/run/docker.sock
+
 volumes:
   canvas-state:
   codex-home:
   projects:
   dispatcher-state:
+  operador-home:

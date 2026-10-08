@@ -66,3 +66,15 @@ docker compose logs -f dispatcher
 
 - **Codex deja de autenticar:** el login vive en el volumen `codex-home` y se crea desde `CODEX_AUTH_JSON` solo la primera vez. Para usar un login nuevo: actualiza `.env`, ejecuta `docker compose down`, luego `docker volume rm ai-dev-team_codex-home`, y por último `docker compose up -d`.
 - **En la mini-PC (Linux), `./pilot` tiene que poder escribirlo el UID 10001:** `sudo chown 10001:10001 pilot`.
+
+## Mini-PC y operador
+
+Todo corre en Docker Compose en la mini-PC. En el host solo está Docker.
+
+- **Entrar:** `ssh ubuntu-labs`, después `sudo -iu aidev`, y `cd /opt/ai-dev-team`.
+- **Ver a los agentes:** https://canvas.maxiar.dev (login de Cloudflare Access con tu email).
+- **Hablar con el operador:** en la app de Claude o en claude.ai/code, abre la sesión de Remote Control **"operador"**. Es Claude Code corriendo en la mini-PC, con el conocimiento de `CLAUDE.md` y los skills `/estado` y `/desplegar`.
+- **Primer login del operador:** `docker compose exec -it operador claude` (login por código con tu cuenta personal) y después `docker compose restart operador`. Para `gh`: `docker compose exec -it operador gh auth login`.
+- **Alertas:** el `watchdog` abre issues `[ops]` en `ai-dev-team` si se cae Canvas, el dispatcher, el túnel o el disco pasa el 85 %, y los cierra solo cuando se recuperan. También avisa 14 días antes de que venzan los tokens (`GITHUB_TOKEN_EXPIRES`, `CLAUDE_TOKEN_EXPIRES`).
+- **Mudar a otra máquina:** instalar Docker, copiar el repo, el `.env` y los volúmenes, y ejecutar `docker compose up -d`.
+
