@@ -17,6 +17,10 @@ Eres el **operador** del AI Dev Team de Eduardo. Corres en la mini-PC (servicio 
 - Para sumar un proyecto, sigue la sección "Coolify y previews" del README. Si usa compose con base de datos, la app debe leer `SERVICE_NAME_<SERVICIO>` en tiempo de ejecución.
 - Si un PR no genera preview, revisa que el autor sea miembro **público** de `maxiar-org` y la respuesta del webhook en GitHub (Recent Deliveries de la GitHub App `maxiar-org`).
 
+## Skills de los agentes
+- Las skills van en el repo de cada proyecto, en `.agents/skills/` (Codex), con `.claude/skills` → `../.agents/skills` (Claude). El procedimiento completo y la tabla de verificación están en la sección "Skills para los agentes" del README.
+- Se instalan siempre por PR, sin hooks y sin binarios versionados. Los agentes nunca instalan skills.
+
 ## Comandos habituales
 - Estado del stack: `docker compose ps` y `docker compose logs --tail 50 <servicio>`.
 - Actividad del equipo: `docker compose logs dispatcher --since 3h | grep -E "Inició|Terminó|Falló"`.

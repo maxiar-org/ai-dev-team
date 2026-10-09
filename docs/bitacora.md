@@ -144,6 +144,11 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
   - `set -e` de `start.sh` cortaba el bucle que relanza el servidor (PR #9).
 - **Siguiente:** la fase futura de mejoras.
 
+## 2026-10-09: skills para los agentes
+- **Hallazgo:** cada motor lee una sola ruta de skills. Claude (`claude-agent-acp` 0.63) lee `.claude/skills` y Codex (`codex-acp`) lee `.agents/skills`. Con `.claude/skills` como enlace simbólico a `../.agents/skills`, los dos ven la misma copia. Lo verificamos con skills señuelo en Canvas.
+- **Convención:** las skills van en el repo del proyecto, se instalan por PR y sin hooks. El procedimiento está en el README ("Skills para los agentes").
+- **Primeras skills:** `frontend-design` (Anthropic) e `impeccable` 4.5.1 en qr-generator (qr-generator#25), para un issue de diseño. Son skills pensadas para web, aplicadas a Flutter como experimento.
+
 ## Fase futura de mejoras (backlog)
 - **4c, eventos de GitHub por webhook** (en lugar del polling cada 60 s): se posterga por decisión de Eduardo (2026-10-08), porque la latencia actual no molesta. Hay base para hacerlo: el túnel y los webhooks ya funcionan con Coolify.
 - **QA sobre las previews desplegadas** (service token de Access), cuando haya un proyecto con base de datos.
