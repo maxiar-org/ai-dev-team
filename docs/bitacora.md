@@ -123,10 +123,35 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
 - **Membresía del bot:** Eduardo la hizo pública. Queda pendiente rotar los tokens y activarle el 2FA al bot.
 - **Siguiente:** el botón "Resumen del operador" a pedido (opción C), y la fase futura de mejoras.
 
+## 2026-10-09: fase 4e cerrada (resumen del operador a pedido)
+- **Botón "Pedir resumen"** en `estado.maxiar.dev`: el operador (`claude -p` con la cuenta de Eduardo) escribe "Qué pasó" desde el resumen anterior y "Qué hacer y por qué". `estado` junta los datos del período sin LLM y los manda por la red interna `resumen`, con token. Los resúmenes quedan en `~/resumenes` del volumen `operador-home`.
+- **Criterios de éxito:**
+
+  | # | Criterio | Resultado |
+  |---|---|---|
+  | 1 | Resumen en 3 minutos o menos, con fecha y período | ✅ unos 30 s; 309 palabras; Eduardo lo encontró "útil y preciso" |
+  | 2 | El segundo cubre solo desde el primero | ✅ el segundo cubre desde las 01:03:18Z, la hora del primero |
+  | 3 | "generando…" sin permitir otro pedido | ✅ lo cubren tests; además hay una pausa mínima de 120 s |
+  | 4 | Con el operador caído, la página sigue | ✅ `estado` muestra el error; el servidor se relanza solo en menos de 8 s (después del arreglo del PR #9) |
+  | 5 | Los agentes no llegan; `claude -p` no escribe ni usa `docker` ni lee archivos | ✅ desde Canvas, `estado` y el operador no resuelven ni conectan; el log del filtro muestra bloqueados `docker ps`, la comprobación del `.env`, `echo` y `gh api` |
+
+- **Seguridad:**
+  - Una prueba real mostró que `claude -p`, en modo `dontAsk`, aprueba por su cuenta comandos que considera de lectura (`docker ps`). Por eso la lista blanca efectiva es nuestro hook `PreToolUse` (`operador/resumen_guard.py`): solo `gh issue|pr|run` de lectura sobre `maxiar-org`, sin metacaracteres. Cada decisión queda en `~/resumenes/guard.log`.
+  - En el uso real, el operador intentó comandos compuestos (`--jq` y `;`), el filtro los bloqueó y siguió con comandos simples.
+  - `estado` ahora escucha solo en la red `publico`, compartida con `cloudflared`; la ruta del túnel apunta a `estado-publico:8090`.
+- **Problemas encontrados en el despliegue y resueltos:**
+  - GitHub exige `is:issue` o `is:pr` en la búsqueda: la de `[ops]` daba 422 (PR #8).
+  - `set -e` de `start.sh` cortaba el bucle que relanza el servidor (PR #9).
+- **Siguiente:** la fase futura de mejoras.
+
 ## Fase futura de mejoras (backlog)
 - **4c, eventos de GitHub por webhook** (en lugar del polling cada 60 s): se posterga por decisión de Eduardo (2026-10-08), porque la latencia actual no molesta. Hay base para hacerlo: el túnel y los webhooks ya funcionan con Coolify.
 - **QA sobre las previews desplegadas** (service token de Access), cuando haya un proyecto con base de datos.
-- **Vista de estado, opción C:** botón "Resumen del operador" a pedido, con la narrativa del operador.
+- **Resumen del operador, ideas:** un resumen programado (por ejemplo, cada mañana) e historial navegable.
+- **Resumen del operador, menores:**
+  - el `?error=` muestra texto libre (escapado): conviene usar códigos;
+  - un timeout de `claude` puede dejar procesos hijos huérfanos (los recoge `init`);
+  - si el alias de red no resuelve al arrancar, se reintenta cada 5 s con trazas en los logs.
 - **Vista de estado, menores:**
   - si no hay token de Coolify, "Despliegues" aparece vacía sin explicar por qué;
   - con `take=30`, la preview de un PR abierto hace mucho puede quedar fuera del historial de Coolify;
