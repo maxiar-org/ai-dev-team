@@ -72,7 +72,7 @@ docker compose logs -f dispatcher
 Todo corre en Docker Compose en la mini-PC. En el host solo está Docker.
 
 - **Entrar:** `ssh ubuntu-labs`, después `sudo -iu aidev`, y `cd /opt/ai-dev-team`.
-- **Estado de todo:** https://estado.maxiar.dev (Access). Arriba, qué espera de vos y en qué orden mergear; abajo, el trabajo en curso, los despliegues y previews, la salud y el consumo. Se actualiza cada minuto, sin LLM (servicio `estado`).
+- **Estado de todo:** https://estado.maxiar.dev (Access). Arriba, qué espera de vos y en qué orden mergear; abajo, el trabajo en curso, los despliegues y previews, la salud y el consumo. Se actualiza cada minuto, sin LLM (servicio `estado`). El botón **"Pedir resumen"** le pide al operador (con `claude -p` y tu cuenta personal) qué pasó desde el resumen anterior y qué hacer y por qué; tarda de 1 a 3 minutos y los resúmenes quedan en `~/resumenes` del volumen `operador-home`.
 - **Ver a los agentes:** https://canvas.maxiar.dev (login de Cloudflare Access con tu email).
 - **Hablar con el operador:** en la app de Claude o en claude.ai/code, abre la sesión de Remote Control **"operador"**. Es Claude Code corriendo en la mini-PC, con el conocimiento de `CLAUDE.md` y los skills `/estado` y `/desplegar`.
 - **Primer login del operador:** `docker compose exec -it operador claude` (login por código con tu cuenta personal) y después `docker compose restart operador`. Para `gh`: `docker compose exec -it operador gh auth login` y luego `docker compose exec -it operador gh auth refresh -s read:project` (para leer el tablero).

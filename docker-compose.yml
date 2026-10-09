@@ -96,7 +96,7 @@ services:
     depends_on:
       - dispatcher
     entrypoint: ["python", "-m", "dispatcher.estado"]
-    networks: [default, coolify]
+    networks: [default, coolify, resumen]
     environment:
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       GITHUB_ORG: ${GITHUB_ORG:-maxiar-org}
@@ -114,6 +114,9 @@ services:
       COOLIFY_API_TOKEN: ${COOLIFY_API_TOKEN:-}
       GITHUB_TOKEN_EXPIRES: ${GITHUB_TOKEN_EXPIRES:-}
       CLAUDE_TOKEN_EXPIRES: ${CLAUDE_TOKEN_EXPIRES:-}
+      RESUMEN_URL: http://operador:8091
+      RESUMEN_TOKEN: ${RESUMEN_TOKEN:-}
+      ESTADO_ORIGIN: https://estado.maxiar.dev
     volumes:
       - dispatcher-state:/state:ro
       - ./pilot:/pilot:ro
@@ -128,6 +131,9 @@ services:
     init: true
     group_add:
       - "${DOCKER_GID:-999}"  # grupo docker del host, para usar docker.sock
+    networks: [default, resumen]
+    environment:
+      RESUMEN_TOKEN: ${RESUMEN_TOKEN:-}  # servidor de resúmenes a pedido (operador/resumen.py, :8091)
     volumes:
       - operador-home:/home/aidev
       - .:/opt/ai-dev-team
@@ -144,3 +150,5 @@ networks:
   coolify:
     external: true  # la crea el instalador de Coolify (/data/coolify)
     name: coolify
+  resumen:
+    internal: true  # solo estado <-> operador (pedidos de resumen); Canvas no la ve
