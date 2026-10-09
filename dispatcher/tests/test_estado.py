@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from dispatcher.estado import Collector, Page
+from dispatcher.estado import Collector, Page, handle_post, refresh_summary
 from dispatcher.models import Item
+from dispatcher.view import Snapshot, View, build_view, render
 
 
 class GH:
@@ -72,3 +73,101 @@ def test_refresh_shows_error_page_instead_of_freezing():
     page.update("<p>vieja</p>", generated_at=0.0)
     refresh(page, Boom(), now=50.0)
     assert "vieja" not in page.html and "ValueError" in page.html and page.generated_at == 50.0
+
+
+ORIGIN = "https://estado.maxiar.dev"
+
+
+class FakeResumen:
+    def __init__(self, status="idle", fail=False):
+        self.st = {"status": status, "since": "2026-10-08T00:00:00Z", "started_at": None, "last": None, "error": None}
+        self.fail, self.sent = fail, []
+
+    def status(self):
+        if self.fail:
+            raise RuntimeError("operador caído")
+        return self.st
+
+    def request(self, data):
+        self.sent.append(data)
+        self.st = dict(self.st, status="running", started_at=1000.0)
+        return True
+
+
+class PeriodCollector:
+    def period(self, since):
+        return [{"number": 23}], [], [], []
+
+
+def page_with_view():
+    p = Page()
+    p.update("<p>x</p>", generated_at=1000.0, view=View(updated=1000.0))
+    return p
+
+
+def test_post_rejects_foreign_origin():
+    r = FakeResumen()
+    assert handle_post(page_with_view(), PeriodCollector(), r, "https://malo.dev", ORIGIN, 1000.0) == (403, "")
+    assert handle_post(page_with_view(), PeriodCollector(), r, None, ORIGIN, 1000.0) == (403, "")
+    assert r.sent == []
+
+
+def test_post_sends_period_data_and_shows_running():
+    r, page = FakeResumen(), page_with_view()
+    assert handle_post(page, PeriodCollector(), r, ORIGIN, ORIGIN, 1000.0) == (303, "/")
+    assert r.sent[0]["desde"] == "2026-10-08T00:00:00Z" and r.sent[0]["mergeados"] == [{"number": 23}]
+    assert "generando" in page.body(now=1000.0)
+
+
+def test_post_when_already_running_does_not_resend():
+    r = FakeResumen(status="running")
+    assert handle_post(page_with_view(), PeriodCollector(), r, ORIGIN, ORIGIN, 1000.0) == (303, "/") and r.sent == []
+
+
+def test_post_when_operator_down_redirects_with_error():
+    code, loc = handle_post(page_with_view(), PeriodCollector(), FakeResumen(fail=True), ORIGIN, ORIGIN, 1000.0)
+    assert code == 303 and loc.startswith("/?error=") and "operador" in loc
+
+
+def test_notice_is_escaped_and_shown_once():
+    page = Page()
+    page.update(render(build_view(Snapshot(now=1000.0))), generated_at=1000.0, view=View(updated=1000.0))
+    html = page.body(now=1001.0, notice="<b>caído</b>")
+    assert "&lt;b&gt;caído&lt;/b&gt;" in html and "__AVISO__" not in page.body(now=1001.0)
+
+
+def test_refresh_summary_updates_page():
+    page, r = page_with_view(), FakeResumen(status="running")
+    refresh_summary(page, r, 1000.0)
+    assert "generando" in page.body(now=1000.0)
+
+
+# --- Arreglos de la revisión final (4e) ---
+
+def test_origin_must_match_exactly():
+    r = FakeResumen()
+    for bad in ("https://estado.maxiar.dev.evil.com", "https://estado.maxiar.dev@evil.com", "http://estado.maxiar.dev"):
+        assert handle_post(page_with_view(), PeriodCollector(), r, bad, ORIGIN, 1000.0) == (403, "")
+    assert handle_post(page_with_view(), PeriodCollector(), r, ORIGIN + "/?x=1", ORIGIN, 1000.0)[0] == 303  # Referer
+    assert len(r.sent) == 1
+
+
+def test_refresh_error_clears_view_so_summary_refresh_cannot_hide_it():
+    from dispatcher.estado import refresh
+
+    class Boom:
+        def collect(self, now):
+            raise ValueError("roto")
+
+    page = page_with_view()
+    refresh(page, Boom(), now=50.0)
+    refresh_summary(page, FakeResumen(status="running"), 60.0)
+    assert page.view is None and "ValueError" in page.body(now=61.0)
+
+
+def test_serve_binds_to_given_host():
+    from dispatcher.estado import serve
+
+    srv = serve(Page(), 0, host="127.0.0.1")
+    assert srv.server_address[0] == "127.0.0.1"
+    srv.server_close()

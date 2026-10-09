@@ -175,3 +175,9 @@ class GitHubClient:
         comments = self._paginate(f"{self._repo(repo)}/issues/{number}/comments", {"per_page": 100})
         mine = [c.get("body") or "" for c in comments if (c.get("user") or {}).get("login") == login]
         return mine[-1] if mine else None
+    def search_since(self, query: str) -> list[dict]:
+        resp = self.http.get("/search/issues", params={"q": query, "per_page": 100})
+        resp.raise_for_status()
+        return [{"repo": i["repository_url"].rsplit("/", 1)[-1], "number": i["number"], "title": i["title"],
+                 "url": i["html_url"], "closed_at": i.get("closed_at"), "state": i.get("state")}
+                for i in resp.json().get("items", [])]

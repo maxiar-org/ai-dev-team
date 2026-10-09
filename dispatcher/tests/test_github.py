@@ -148,3 +148,16 @@ def test_pr_details_and_last_comment(gh):
     d = gh.pr_details("qr", 7)
     assert d == {"head_sha": "abc", "head_ref": "agent/3-x", "mergeable_state": "clean", "files": ("lib/a.dart", "README.md"), "ci": "success"}
     assert gh.last_comment_by("qr", 9, "maxiar-ai-dev-team-bot") == "último del bot"
+
+
+@respx.mock
+def test_search_since_returns_compact_items(gh):
+    r = respx.get("https://api.github.com/search/issues").respond(json={"items": [
+        {"number": 23, "title": "Kit QR", "html_url": "https://github.com/maxiar-org/qr-generator/pull/23",
+         "repository_url": "https://api.github.com/repos/maxiar-org/qr-generator", "closed_at": "2026-10-08T05:30:00Z",
+         "state": "closed", "pull_request": {}},
+    ]})
+    items = gh.search_since("org:maxiar-org is:pr is:merged merged:>=2026-10-08T00:00:00Z")
+    assert items == [{"repo": "qr-generator", "number": 23, "title": "Kit QR",
+                      "url": "https://github.com/maxiar-org/qr-generator/pull/23", "closed_at": "2026-10-08T05:30:00Z", "state": "closed"}]
+    assert r.calls.last.request.url.params["q"].startswith("org:maxiar-org is:pr")
