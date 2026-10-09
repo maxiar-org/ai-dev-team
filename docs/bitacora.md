@@ -102,7 +102,35 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
 - **Tokens a rotar:** se pegaron en la conversación el `TUNNEL_TOKEN`, el `CLAUDE_CODE_OAUTH_TOKEN` y el `COOLIFY_API_TOKEN`.
 - **Siguiente:** 4c (eventos de GitHub) y 4d (vista de estado). QA sobre las previews queda para cuando haya un proyecto con base de datos.
 
+## 2026-10-08: fase 4d cerrada (vista de estado)
+- **`estado.maxiar.dev`** (Access): servicio `estado` del compose, con la misma imagen del dispatcher. Junta datos cada 60 s (GitHub, `state.json`, `metrics.csv`, Coolify y los chequeos del watchdog) y arma la página con reglas fijas, sin LLM.
+- **Criterios de éxito:**
+
+  | # | Criterio | Resultado |
+  |---|---|---|
+  | 1 | Abre en el celular detrás de Access, con las cuatro secciones | ✅ la URL pública redirige al login de Access (302); las secciones se ven con datos reales |
+  | 2 | PRs para revisar y `needs:human` arriba, con links y orden de merge | ✅ `qr-generator #8` (`needs:human`) arriba, con el último comentario del bot; el orden de merge está cubierto por tests (hoy no hay PRs esperando) |
+  | 3 | Se actualiza sola, con datos de menos de 2 minutos | ✅ "actualizado hace 30 a 63 s" |
+  | 4 | Una fuente caída no tira la página | ✅ con Coolify apagado: "Despliegues" mostró "sin datos", el chequeo de salud de Coolify dio FALLA y el resto siguió igual; se recuperó solo |
+  | 5 | Cero LLM | ✅ |
+
+- **Revisión final:** encontró 7 hallazgos importantes, todos corregidos con tests (202 en total):
+  - el PR de un issue que todavía está en dev no aparece como "para revisar";
+  - solo `dirty` cuenta como conflicto;
+  - el orden de merge y los avisos de archivos se calculan por repo;
+  - con GitHub caído nunca dice "Nada pendiente";
+  - se pide el detalle solo de los PRs que pueden esperar a Eduardo, para cuidar el límite de la API.
+- **Membresía del bot:** Eduardo la hizo pública. Queda pendiente rotar los tokens y activarle el 2FA al bot.
+- **Siguiente:** el botón "Resumen del operador" a pedido (opción C), y la fase futura de mejoras.
+
 ## Fase futura de mejoras (backlog)
 - **4c, eventos de GitHub por webhook** (en lugar del polling cada 60 s): se posterga por decisión de Eduardo (2026-10-08), porque la latencia actual no molesta. Hay base para hacerlo: el túnel y los webhooks ya funcionan con Coolify.
 - **QA sobre las previews desplegadas** (service token de Access), cuando haya un proyecto con base de datos.
+- **Vista de estado, opción C:** botón "Resumen del operador" a pedido, con la narrativa del operador.
+- **Vista de estado, menores:**
+  - si no hay token de Coolify, "Despliegues" aparece vacía sin explicar por qué;
+  - con `take=30`, la preview de un PR abierto hace mucho puede quedar fuera del historial de Coolify;
+  - un PR huérfano con `agent:working` aparece como "espera a Eduardo";
+  - faltan los estados de CI `action_required` y `neutral`;
+  - los logs de httpx en nivel INFO llenan los logs (unas 20 líneas por minuto).
 - **Mejoras menores diferidas** de las revisiones de código (ver ledgers y bitácoras de cada fase).
