@@ -57,6 +57,7 @@ class Snapshot:
     apps: list[AppInfo] = field(default_factory=list)
     metrics: list[dict[str, str]] = field(default_factory=list)
     human_notes: dict[str, str] = field(default_factory=dict)
+    summary: dict | None = None
     errors: dict[str, str] = field(default_factory=dict)
 
 
@@ -73,6 +74,7 @@ class View:
     health: list[Check] = field(default_factory=list)
     usage: list[dict] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
+    summary: dict | None = None
 
 
 def issue_of(pr: PRInfo) -> int | None:
@@ -168,7 +170,7 @@ def _usage(rows: list[dict[str, str]], now: float) -> list[dict]:
 
 
 def build_view(snap: Snapshot) -> View:
-    v = View(updated=snap.now, apps=snap.apps, health=snap.checks, errors=dict(snap.errors))
+    v = View(updated=snap.now, apps=snap.apps, health=snap.checks, errors=dict(snap.errors), summary=snap.summary)
     working = {(i.repo, i.number) for i in snap.issues if LABEL_WORKING in i.labels}
     active = {(r, int(n)) for r, _, n in (k.rpartition("#") for k in snap.active) if n.isdigit()}
     busy = working | active
@@ -224,6 +226,7 @@ h1{font-size:20px;margin:4px 0 2px}h2{font-size:16px;margin:22px 0 8px;border-bo
 .muted{color:#8b949e;font-size:13px}.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px 12px;margin:8px 0}
 .urgent{border-color:#d29922}a{color:#58a6ff;text-decoration:none}.ok{color:#3fb950}.bad{color:#f85149}.warn{color:#d29922}
 table{width:100%;border-collapse:collapse;font-size:14px}td{padding:4px 2px;border-bottom:1px solid #21262d;vertical-align:top}
+button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #30363d;background:#238636;color:#fff}
 .tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:10px;background:#21262d;margin-left:4px}
 """
 
@@ -237,8 +240,11 @@ def _err(view: View, section: str) -> str:
 
 
 def render(view: View) -> str:
+    from .summary import render_summary  # import diferido: summary no depende de view, pero así queda a salvo de ciclos
+
+    reload_s = 10 if (view.summary or {}).get("status") == "running" else 60
     out = [f'<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-           f'<meta http-equiv="refresh" content="60"><title>Estado · AI Dev Team</title><style>{CSS}</style></head><body>',
+           f'<meta http-equiv="refresh" content="{reload_s}"><title>Estado · AI Dev Team</title><style>{CSS}</style></head><body>',
            f'<h1>AI Dev Team</h1><div class="muted">Actualizado hace {AGE_MARK} s · se recarga cada minuto</div>']
     # 1. Qué espera de ti
     out.append("<h2>🔔 Qué espera de ti</h2>")
@@ -292,7 +298,7 @@ def render(view: View) -> str:
             f'<td>{u["tasks_7d"]} tareas · {u["minutes_7d"]:.0f} min</td></tr>' for u in view.usage) + "</table></div>")
     else:
         out.append('<p class="muted">Sin tareas en los últimos 7 días.</p>')
-    # 5. Reservado (opción C)
-    out.append('<h2>🤖 Resumen del operador</h2><p class="muted">Próximamente: resumen narrativo a pedido.</p>')
+    # 5. Resumen del operador (a pedido)
+    out.append(render_summary(view.summary, view.errors.get("resumen"), view.updated))
     out.append("</body></html>")
     return "".join(out)
