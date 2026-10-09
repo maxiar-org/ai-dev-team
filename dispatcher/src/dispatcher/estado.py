@@ -38,7 +38,7 @@ class Collector:
         org = self.org
         merged = self.github.search_since(f"org:{org} is:pr is:merged merged:>={since}")
         closed = self.github.search_since(f"org:{org} is:issue is:closed closed:>={since}")
-        ops = self.github.search_since(f"repo:{org}/{self.ops_repo} label:ops updated:>={since}")
+        ops = self.github.search_since(f"repo:{org}/{self.ops_repo} is:issue label:ops updated:>={since}")
         return merged, closed, ops, MetricsLog(self.metrics_path).read()
 
     def _collect_repo(self, repo: str, snap: Snapshot) -> None:
