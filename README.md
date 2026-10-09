@@ -80,6 +80,30 @@ Todo corre en Docker Compose en la mini-PC. En el host solo está Docker.
 - **Alertas:** el `watchdog` abre issues `[ops]` en `ai-dev-team` si se cae Canvas, el dispatcher, el túnel o el disco pasa el 85 %, y los cierra solo cuando se recuperan. También avisa 14 días antes de que venzan los tokens (`GITHUB_TOKEN_EXPIRES`, `CLAUDE_TOKEN_EXPIRES`).
 - **Mudar a otra máquina:** instalar Docker, copiar el repo **exactamente en `/opt/ai-dev-team`**, el `.env` y los volúmenes, y ejecutar `docker compose up -d`. La ruta es fija porque el operador ejecuta `docker compose` desde su contenedor y el daemon del host resuelve los bind mounts con esa ruta. Después, aplica los permisos de `pilot/` (ver Problemas conocidos).
 
+## Skills para los agentes
+
+**Convención:** las skills van en el repo de cada proyecto, en **`.agents/skills/<skill>/`**, y **`.claude/skills` es un enlace simbólico** a `../.agents/skills`. Así hay una sola copia y la ven los dos motores. Ejemplo: [qr-generator#25](https://github.com/maxiar-org/qr-generator/pull/25).
+
+**Por qué (verificado el 2026-10-09 en nuestro Canvas,** con dos skills señuelo, cada una con una palabra secreta):
+
+| Motor | `.agents/skills` | `.claude/skills` | `.claude/skills` → `../.agents/skills` |
+|---|---|---|---|
+| Claude (`claude-agent-acp` 0.63, carga `settingSources` user, project y local) | ❌ | ✅ | ✅ |
+| Codex (`codex-acp`) | ✅ | ❌ | (no aplica) |
+
+**Cómo instalar una skill nueva** (la instalan Eduardo o Claude Code, siempre por PR al proyecto, **nunca los agentes**):
+1. **Leer antes de instalar:** licencia, scripts, si trae hooks y si descarga binarios.
+2. **Instalar solo en `.agents/skills/`:**
+   - Si es un instalador de terceros, elegir el proveedor genérico o de Codex, a nivel proyecto y sin hooks. Ejemplo: `npx impeccable install --providers=codex --scope=project --no-hooks -y`.
+   - Si es una skill suelta (por ejemplo de `anthropics/skills`), copiar su carpeta con `SKILL.md` y `LICENSE`.
+3. **Si el proyecto todavía no tiene el enlace,** crearlo con `mkdir -p .claude && ln -s ../.agents/skills .claude/skills`.
+4. **No versionar binarios:** sumarlos a `.gitignore`.
+5. **Sumar `.agents` y `.claude` a `.dockerignore`,** para que no entren en la imagen de la app.
+6. **Documentar en el `AGENTS.md` del proyecto,** en una sección **Skills**: para qué sirve cada una y que los agentes no las modifican.
+7. **Hooks:** no por defecto. Se ejecutan solos en el contenedor de Canvas en cada edición, y Codex además exige aprobarlos a mano. Si alguna vez hacen falta, va en un PR aparte y con su propio análisis.
+
+**Re-verificar** cuando se actualice la imagen de Canvas (`claude-agent-acp` o `codex-acp`): las rutas que lee cada motor pueden cambiar. La prueba consiste en armar un workspace en `/projects/_skilltest` con una skill señuelo en cada ruta, abrir una conversación por motor con `CanvasClient.create_conversation`, pedir "listá tus skills, sin usar herramientas" y borrar el workspace al terminar.
+
 ## Coolify y previews
 
 Coolify (instalado en `/data/coolify`, con su panel en https://coolify.maxiar.dev detrás de Access) despliega cada proyecto:
