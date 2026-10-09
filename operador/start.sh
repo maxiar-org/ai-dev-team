@@ -8,7 +8,7 @@ cp /opt/ai-dev-team/operador/claude/CLAUDE.md "$HOME/.claude/CLAUDE.md"
 cp -R /opt/ai-dev-team/operador/claude/skills/. "$HOME/.claude/skills/"
 # Servidor de resúmenes a pedido (fase 4e): solo si hay token. Si se cae, se relanza.
 if [ -n "$RESUMEN_TOKEN" ]; then
-  ( while true; do python3 /opt/ai-dev-team/operador/resumen.py; sleep 5; done ) &
+  sh /opt/ai-dev-team/operador/resumen-loop.sh &
 fi
 while true; do
   if ! tmux has-session -t operador 2>/dev/null; then
