@@ -57,7 +57,7 @@ services:
     image: cloudflare/cloudflared:2026.9.3
     restart: unless-stopped
     command: tunnel --no-autoupdate --metrics 0.0.0.0:2000 run
-    networks: [default, coolify]  # para enrutar coolify.maxiar.dev y *.maxiar.dev al proxy de Coolify
+    networks: [default, coolify, publico]  # coolify: *.maxiar.dev al proxy de Coolify; publico: estado
     environment:
       # Si falta, cloudflared no conecta y el watchdog abre [ops] tunel.
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
@@ -96,7 +96,12 @@ services:
     depends_on:
       - dispatcher
     entrypoint: ["python", "-m", "dispatcher.estado"]
-    networks: [default, coolify, resumen]
+    networks:
+      default:
+      coolify:
+      resumen:
+      publico:
+        aliases: [estado-publico]  # estado escucha solo en esta IP; el túnel apunta a estado-publico:8090
     environment:
       GITHUB_TOKEN: ${GITHUB_TOKEN}
       GITHUB_ORG: ${GITHUB_ORG:-maxiar-org}
@@ -155,3 +160,5 @@ networks:
     name: coolify
   resumen:
     internal: true  # solo estado <-> operador (pedidos de resumen); Canvas no la ve
+  publico:
+    internal: true  # solo cloudflared <-> estado: los agentes de Canvas no llegan a la vista ni al botón

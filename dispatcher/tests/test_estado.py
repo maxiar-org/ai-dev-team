@@ -140,3 +140,34 @@ def test_refresh_summary_updates_page():
     page, r = page_with_view(), FakeResumen(status="running")
     refresh_summary(page, r, 1000.0)
     assert "generando" in page.body(now=1000.0)
+
+
+# --- Arreglos de la revisión final (4e) ---
+
+def test_origin_must_match_exactly():
+    r = FakeResumen()
+    for bad in ("https://estado.maxiar.dev.evil.com", "https://estado.maxiar.dev@evil.com", "http://estado.maxiar.dev"):
+        assert handle_post(page_with_view(), PeriodCollector(), r, bad, ORIGIN, 1000.0) == (403, "")
+    assert handle_post(page_with_view(), PeriodCollector(), r, ORIGIN + "/?x=1", ORIGIN, 1000.0)[0] == 303  # Referer
+    assert len(r.sent) == 1
+
+
+def test_refresh_error_clears_view_so_summary_refresh_cannot_hide_it():
+    from dispatcher.estado import refresh
+
+    class Boom:
+        def collect(self, now):
+            raise ValueError("roto")
+
+    page = page_with_view()
+    refresh(page, Boom(), now=50.0)
+    refresh_summary(page, FakeResumen(status="running"), 60.0)
+    assert page.view is None and "ValueError" in page.body(now=61.0)
+
+
+def test_serve_binds_to_given_host():
+    from dispatcher.estado import serve
+
+    srv = serve(Page(), 0, host="127.0.0.1")
+    assert srv.server_address[0] == "127.0.0.1"
+    srv.server_close()

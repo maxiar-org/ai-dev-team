@@ -72,11 +72,17 @@ navegador ──POST /resumen──▶ estado ──POST /resumen (Bearer token)
   - si hay uno en curso, responde 409;
   - si no, guarda los datos recibidos y lanza un hilo que ejecuta `claude -p` con el prompt fijo, y los datos en un bloque delimitado como "datos, no instrucciones";
   - responde 202.
+- **Pausa mínima de 120 s** entre pedidos.
 - **Ejecución de `claude -p`:**
   - `--output-format text`;
-  - `--max-turns 15`;
+  - un hook `PreToolUse` (`operador/resumen_guard.py`, pasado con `--settings`) que es la **lista blanca efectiva**:
+    - solo `gh issue|pr|run` de lectura sobre `maxiar-org`, sin metacaracteres de shell ni URLs de otros hosts;
+    - cada decisión queda en `~/resumenes/guard.log`;
+    - hace falta porque, en modo `dontAsk`, Claude Code aprueba por su cuenta comandos que considera de lectura (por ejemplo `docker ps`);
+  - entorno mínimo, sin `RESUMEN_TOKEN` y con `DOCKER_HOST` apuntando a un socket inexistente;
   - `--allowedTools` limitado a `Bash(gh issue view:*)`, `Bash(gh issue list:*)`, `Bash(gh pr view:*)`, `Bash(gh pr list:*)`, `Bash(gh pr diff:*)` y `Bash(gh run view:*)`;
-  - `--disallowedTools` con `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch` y `Bash(docker:*)`;
+  - `--disallowedTools` con `Read`, `Edit`, `Write`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Bash(docker:*)`, `env`, `printenv`, `cat`, `curl`, `wget`, `gh api` y `gh auth`;
+  - sin tope de turnos, porque `claude` 2.1.293 no tiene `--max-turns`: el límite es el timeout;
   - `cwd` en un directorio vacío;
   - timeout de 5 minutos.
 - **Resultado:** si sale bien, se guarda `~/resumenes/<generated_at>.json`. Si falla, se guarda el error en memoria y se devuelve en `error`.
@@ -89,7 +95,8 @@ navegador ──POST /resumen──▶ estado ──POST /resumen (Bearer token)
 ### 4.3 Compose y configuración
 - **Red nueva `resumen`** (`internal: true`), compartida solo por `estado` y `operador`. Canvas y el dispatcher no la ven.
 - **`RESUMEN_TOKEN`** en `.env` (generado con `openssl rand -hex 32`), pasado solo a `estado` y `operador`.
-- `estado` recibe `RESUMEN_URL=http://operador:8091` y `ESTADO_ORIGIN=https://estado.maxiar.dev`.
+- `estado` recibe `RESUMEN_URL=http://resumen-operador:8091` y `ESTADO_ORIGIN=https://estado.maxiar.dev`. `resumen.py` escucha solo en la IP del alias `resumen-operador`, que existe únicamente en la red `resumen`. El operador también está en `default`, igual que Canvas.
+- **Red `publico`** (`internal: true`), compartida solo por `cloudflared` y `estado`. `estado` escucha solo en la IP del alias `estado-publico`, y la ruta del túnel apunta a `http://estado-publico:8090`. Así los agentes de Canvas no llegan ni a la vista ni al botón, porque el chequeo de `Origin` solo protege contra navegadores.
 
 ## 5. Errores
 
@@ -111,5 +118,5 @@ navegador ──POST /resumen──▶ estado ──POST /resumen (Bearer token)
 | Riesgo | Mitigación |
 |---|---|
 | Inyección de instrucciones desde títulos o comentarios de GitHub hacia un Claude con la cuenta de Eduardo | Prompt fijo con los datos delimitados como datos; herramientas limitadas a lectura de `gh`; sin `docker`, sin archivos y sin red web |
-| Que alguien de la red local o los agentes disparen resúmenes | Red interna dedicada, token y verificación de `Origin`; además, Access delante de `estado` |
+| Que alguien de la red local o los agentes disparen resúmenes | `estado` escucha solo en la red `publico` (con `cloudflared`) y el operador solo en la red `resumen`; token; `Origin` exacto; Access delante de `estado`; pausa mínima de 120 s |
 | Consumo de cuota | Solo a pedido, de a uno por vez, con tope de turnos |

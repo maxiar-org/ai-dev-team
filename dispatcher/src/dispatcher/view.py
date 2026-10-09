@@ -245,7 +245,7 @@ def render(view: View) -> str:
     reload_s = 10 if (view.summary or {}).get("status") == "running" else 60
     out = [f'<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
            f'<meta http-equiv="refresh" content="{reload_s}"><title>Estado · AI Dev Team</title><style>{CSS}</style></head><body>',
-           f'<h1>AI Dev Team</h1><div class="muted">Actualizado hace {AGE_MARK} s · se recarga cada minuto</div>']
+           f'<h1>AI Dev Team</h1><div class="muted">Actualizado hace {AGE_MARK} s · se recarga sola</div>']
     # 1. Qué espera de ti
     out.append("<h2>🔔 Qué espera de ti</h2>")
     out.append(_err(view, "github"))

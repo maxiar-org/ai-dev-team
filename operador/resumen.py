@@ -20,6 +20,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 PORT = 8091
+COOLDOWN_S = 120  # mínimo entre pedidos: cuida la cuota aunque alguien insista con el botón
+GUARD = str(Path(__file__).resolve().with_name("resumen_guard.py"))
+GUARD_SETTINGS = json.dumps({"hooks": {"PreToolUse": [
+    {"matcher": "*", "hooks": [{"type": "command", "command": f"python3 {GUARD}"}]}]}})
 MAX_BODY = 1_000_000
 ALLOWED_TOOLS = [
     "Bash(gh issue view:*)", "Bash(gh issue list:*)", "Bash(gh pr view:*)",
@@ -61,6 +65,7 @@ def iso(ts: float) -> str:
 
 def claude_command() -> list[str]:
     return ["claude", "-p", "--output-format", "text", "--permission-mode", "dontAsk", "--tools", "Bash",
+            "--settings", GUARD_SETTINGS,
             "--disallowedTools", *DENIED_TOOLS, "--allowedTools", *ALLOWED_TOOLS, "--strict-mcp-config", "--setting-sources", "project"]
 
 
@@ -82,7 +87,9 @@ def run_claude(prompt: str, timeout: int) -> str:
 
 
 def build_prompt(data: dict) -> str:
-    return PROMPT + "\n<datos>\n" + json.dumps(data, ensure_ascii=False, indent=1) + "\n</datos>\n"
+    # "<" escapado: nada dentro de los datos puede cerrar el bloque <datos>
+    payload = json.dumps(data, ensure_ascii=False, indent=1).replace("<", "\\u003c")
+    return PROMPT + "\n<datos>\n" + payload + "\n</datos>\n"
 
 
 class Summaries:
@@ -92,12 +99,17 @@ class Summaries:
         self.runner, self.clock, self.timeout = runner, clock, timeout
         self.lock = threading.Lock()
         self.started_at: float | None = None
+        self.last_start: float | None = None
         self.error: str | None = None
         self.thread: threading.Thread | None = None
 
     def last(self) -> dict | None:
-        files = sorted(self.dir.glob("*.json"))
-        return json.loads(files[-1].read_text()) if files else None
+        for path in sorted(self.dir.glob("*.json"), reverse=True):
+            try:
+                return json.loads(path.read_text())
+            except (OSError, ValueError):  # archivo dañado: se saltea
+                continue
+        return None
 
     def since(self) -> str:
         last = self.last()
@@ -109,10 +121,17 @@ class Summaries:
 
     def start(self, data: dict, background: bool = True) -> bool:
         with self.lock:
-            if self.started_at is not None:
+            now = self.clock()
+            if self.started_at is not None or (self.last_start is not None and now - self.last_start < COOLDOWN_S):
                 return False
-            self.started_at = self.clock()
-        since = self.since()
+            self.started_at = self.last_start = now
+        try:
+            since = self.since()
+        except Exception as exc:  # noqa: BLE001
+            self.error = f"{type(exc).__name__}: {exc}"[:300]
+            with self.lock:
+                self.started_at = None
+            return True
         if background:
             self.thread = threading.Thread(target=self._run, args=(data, since), daemon=True)
             self.thread.start()
@@ -129,8 +148,12 @@ class Summaries:
             markdown = self.runner(build_prompt(data), self.timeout)
             generated = iso(self.clock())
             path = self.dir / (generated.replace(":", "") + ".json")
-            path.write_text(json.dumps({"generated_at": generated, "since": since, "markdown": markdown}, ensure_ascii=False))
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps({"generated_at": generated, "since": since, "markdown": markdown}, ensure_ascii=False))
+            os.replace(tmp, path)  # escritura atómica: nunca queda un JSON a medias
             self.error = None
+        except subprocess.TimeoutExpired as exc:
+            self.error = f"claude tardó más de {int(exc.timeout)} s"
         except Exception as exc:  # noqa: BLE001 — cualquier falla se informa en el estado
             self.error = f"{type(exc).__name__}: {exc}"[:300]
         finally:

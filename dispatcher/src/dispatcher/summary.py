@@ -106,7 +106,7 @@ def render_summary(summary: dict | None, error: str | None, now: float) -> str:
             out.append('<p class="muted">Todavía no hay resúmenes.</p>')
     if summary and summary.get("status") == "running":
         started = summary.get("started_at") or now
-        out.append(f'<p class="warn">⏳ generando… hace {int(now - started)} s</p>')
+        out.append(f'<p class="warn">⏳ generando… hace {max(0, int(now - started))} s</p>')
     else:
         out.append('<form method="post" action="/resumen"><button type="submit">Pedir resumen</button></form>')
     return "".join(out)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import threading
 import time
 from html import escape
@@ -115,11 +116,13 @@ class Page:
         self.html = "<!doctype html><meta charset=utf-8><p>Cargando…</p>"
         self.generated_at = time.time()
         self.view = None
+        self.lock = threading.Lock()  # el hilo de recolección y los pedidos HTTP la actualizan
 
     def update(self, html: str, generated_at: float, view=None) -> None:
-        self.html, self.generated_at = html, generated_at
-        if view is not None:
-            self.view = view
+        with self.lock:
+            self.html, self.generated_at = html, generated_at
+            if view is not None:
+                self.view = view
 
     def body(self, now: float, notice: str | None = None) -> str:
         aviso = f'<p class="bad">⚠️ {escape(notice[:300])}</p>' if notice else ""
@@ -133,6 +136,8 @@ def refresh(page: Page, collector, now: float) -> None:
         page.update(render(view), now, view)
     except Exception as exc:
         log.exception("No pude armar la vista")
+        with page.lock:
+            page.view = None  # que refresh_summary no vuelva a dibujar la vista vieja encima del error
         page.update('<!doctype html><meta charset=utf-8><meta name="viewport" content="width=device-width">'
                     '<meta http-equiv="refresh" content="60"><p>⚠️ No pude armar la vista: '
                     f"{escape(type(exc).__name__)}: {escape(str(exc)[:200])}</p>", now)
@@ -140,18 +145,30 @@ def refresh(page: Page, collector, now: float) -> None:
 
 def refresh_summary(page: Page, resumen, now: float) -> None:
     """Actualiza solo el estado del resumen y re-renderiza (mientras genera, la página se recarga cada 10 s)."""
-    if page.view is None or resumen is None:
+    view = page.view
+    if view is None or resumen is None:
         return
     try:
-        page.view.summary = resumen.status()
-        page.view.errors.pop("resumen", None)
+        view.summary = resumen.status()
+        view.errors.pop("resumen", None)
     except Exception as exc:
-        page.view.errors["resumen"] = f"{type(exc).__name__}: {exc}"[:200]
-    page.update(render(page.view), page.generated_at)
+        view.errors["resumen"] = f"{type(exc).__name__}: {exc}"[:200]
+    html = render(view)
+    with page.lock:
+        if page.view is view:  # si la recolección ya trajo una vista nueva, no se pisa
+            page.html = html
+
+
+def _same_origin(origin: str | None, expected: str) -> bool:
+    """Origin (o Referer) con el mismo esquema y host exactos; nada de prefijos."""
+    if not origin or not expected:
+        return False
+    got, want = urlparse(origin), urlparse(expected)
+    return (got.scheme, got.netloc) == (want.scheme, want.netloc)
 
 
 def handle_post(page: Page, collector, resumen, origin: str | None, expected_origin: str, now: float) -> tuple[int, str]:
-    if not origin or not origin.startswith(expected_origin):
+    if not _same_origin(origin, expected_origin):
         return 403, ""
     if resumen is None or page.view is None:
         return 303, "/?error=" + quote("El resumen no está configurado o la vista todavía no cargó")
@@ -167,7 +184,8 @@ def handle_post(page: Page, collector, resumen, origin: str | None, expected_ori
     return 303, "/"
 
 
-def serve(page: Page, port: int, collector=None, resumen=None, expected_origin: str = "") -> ThreadingHTTPServer:
+def serve(page: Page, port: int, collector=None, resumen=None, expected_origin: str = "",
+          host: str = "0.0.0.0") -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, body: bytes = b"", ctype: str = "text/plain; charset=utf-8", location: str = "") -> None:
             self.send_response(code)
@@ -191,7 +209,10 @@ def serve(page: Page, port: int, collector=None, resumen=None, expected_origin: 
         def do_POST(self):  # noqa: N802
             if urlparse(self.path).path != "/resumen":
                 return self._send(404, b"no encontrado")
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = 0
             if 0 < length <= 10_000:
                 self.rfile.read(length)
             origin = self.headers.get("Origin") or self.headers.get("Referer")
@@ -203,7 +224,7 @@ def serve(page: Page, port: int, collector=None, resumen=None, expected_origin: 
         def log_message(self, *args):  # sin ruido en los logs
             pass
 
-    return ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    return ThreadingHTTPServer((host, port), Handler)
 
 
 def main() -> None:
@@ -233,8 +254,11 @@ def main() -> None:
             time.sleep(interval)
 
     threading.Thread(target=loop, daemon=True).start()
+    # Solo en la red `publico` (estado + cloudflared): el alias estado-publico resuelve a esa IP, así los agentes
+    # de Canvas (en `default`) no llegan ni a la página ni al botón.
+    host = socket.gethostbyname(env.get("ESTADO_HOST", "estado-publico"))
     serve(page, int(env.get("ESTADO_PORT", "8090")), collector, resumen,
-          env.get("ESTADO_ORIGIN", "https://estado.maxiar.dev")).serve_forever()
+          env.get("ESTADO_ORIGIN", "https://estado.maxiar.dev"), host).serve_forever()
 
 
 if __name__ == "__main__":
