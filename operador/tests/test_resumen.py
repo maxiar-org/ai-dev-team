@@ -71,7 +71,6 @@ def test_claude_command_is_read_only():
     assert "--setting-sources project" in joined
     allowed = cmd[cmd.index("--allowedTools") + 1:cmd.index("--strict-mcp-config")]
     assert allowed and all(a.startswith("Bash(gh ") for a in allowed)
-    assert not any(w in joined for w in ("docker", "Edit", "Write", "Read("))
 
 
 def test_http_requires_token_and_runs(tmp_path):
@@ -102,3 +101,18 @@ def test_server_binds_only_to_given_host(tmp_path):
     srv = resumen.make_server(make(tmp_path, lambda p, t: "ok"), "tok", 0, host="127.0.0.1")
     assert srv.server_address[0] == "127.0.0.1"
     srv.server_close()
+
+
+def test_claude_denies_docker_and_env_explicitly():
+    cmd = resumen.claude_command()
+    denied = cmd[cmd.index("--disallowedTools") + 1:cmd.index("--allowedTools")]
+    for rule in ("Bash(docker:*)", "Bash(env:*)", "Bash(printenv:*)", "Bash(cat:*)", "Bash(curl:*)", "Read", "Edit", "Write"):
+        assert rule in denied
+
+
+def test_claude_env_has_no_docker_and_no_token(monkeypatch):
+    monkeypatch.setenv("RESUMEN_TOKEN", "secreto")
+    monkeypatch.setenv("HOME", "/home/aidev")
+    env = resumen.claude_env()
+    assert "RESUMEN_TOKEN" not in env and env["DOCKER_HOST"] == "unix:///nonexistent/docker.sock"
+    assert env["HOME"] == "/home/aidev" and "PATH" in env

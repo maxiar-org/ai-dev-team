@@ -25,6 +25,14 @@ ALLOWED_TOOLS = [
     "Bash(gh issue view:*)", "Bash(gh issue list:*)", "Bash(gh pr view:*)",
     "Bash(gh pr list:*)", "Bash(gh pr diff:*)", "Bash(gh run view:*)",
 ]
+# Deny explícito: Claude Code aprueba solo comandos que considera de lectura (p. ej. `docker ps`), y
+# `docker inspect` o `env` filtrarían secretos. Las reglas de deny ganan sobre esa aprobación automática.
+DENIED_TOOLS = [
+    "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit", "WebFetch", "WebSearch",
+    "Bash(docker:*)", "Bash(env:*)", "Bash(printenv:*)", "Bash(cat:*)", "Bash(curl:*)", "Bash(wget:*)",
+    "Bash(gh api:*)", "Bash(gh auth:*)",
+]
+ENV_KEEP = ("PATH", "HOME", "LANG", "LC_ALL", "TERM", "USER", "DISABLE_AUTOUPDATER")
 
 PROMPT = """Sos el operador del AI Dev Team de Eduardo. Escribí un resumen para Eduardo en español rioplatense, en markdown, \
 de 300 palabras como máximo, con exactamente estas dos secciones:
@@ -53,12 +61,20 @@ def iso(ts: float) -> str:
 
 def claude_command() -> list[str]:
     return ["claude", "-p", "--output-format", "text", "--permission-mode", "dontAsk", "--tools", "Bash",
-            "--allowedTools", *ALLOWED_TOOLS, "--strict-mcp-config", "--setting-sources", "project"]
+            "--disallowedTools", *DENIED_TOOLS, "--allowedTools", *ALLOWED_TOOLS, "--strict-mcp-config", "--setting-sources", "project"]
+
+
+def claude_env() -> dict[str, str]:
+    """Entorno mínimo: sin RESUMEN_TOKEN y sin Docker real (segunda capa, por si un comando se escapa del deny)."""
+    env = {k: v for k, v in os.environ.items() if k in ENV_KEEP}
+    env["DOCKER_HOST"] = "unix:///nonexistent/docker.sock"
+    return env
 
 
 def run_claude(prompt: str, timeout: int) -> str:
     with tempfile.TemporaryDirectory() as cwd:  # directorio vacío: sin archivos de proyecto ni settings locales
-        r = subprocess.run(claude_command(), input=prompt, capture_output=True, text=True, timeout=timeout, cwd=cwd)
+        r = subprocess.run(claude_command(), input=prompt, capture_output=True, text=True, timeout=timeout, cwd=cwd,
+                           env=claude_env())
     out = (r.stdout or "").strip()
     if r.returncode != 0 or not out:
         raise RuntimeError(((r.stderr or "") + " " + out).strip()[:300] or f"exit {r.returncode}")
