@@ -21,6 +21,9 @@ Eres el **operador** del AI Dev Team de Eduardo. Corres en la mini-PC (servicio 
 - Las skills van en el repo de cada proyecto, en `.agents/skills/` (Codex), con `.claude/skills` → `../.agents/skills` (Claude). El procedimiento completo y la tabla de verificación están en la sección "Skills para los agentes" del README.
 - Se instalan siempre por PR, sin hooks y sin binarios versionados. Los agentes nunca instalan skills.
 
+## Generación de imágenes
+- Codex genera imágenes con la suscripción (skill `imagegen`, herramienta integrada `image_gen`, sin API key). Los issues de imágenes van con `engine:codex` y piden explícitamente el modo integrado, nunca el CLI de la API. Ver la sección "Generación de imágenes" del README.
+
 ## Comandos habituales
 - Estado del stack: `docker compose ps` y `docker compose logs --tail 50 <servicio>`.
 - Actividad del equipo: `docker compose logs dispatcher --since 3h | grep -E "Inició|Terminó|Falló"`.
