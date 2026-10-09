@@ -149,6 +149,11 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
 - **Convención:** las skills van en el repo del proyecto, se instalan por PR y sin hooks. El procedimiento está en el README ("Skills para los agentes").
 - **Primeras skills:** `frontend-design` (Anthropic) e `impeccable` 4.5.1 en qr-generator (qr-generator#25), para un issue de diseño. Son skills pensadas para web, aplicadas a Flutter como experimento.
 
+## 2026-10-09: generación de imágenes
+- **Prueba de factibilidad:** Codex en Canvas generó un ícono de 1254×1254 con la skill de sistema `imagegen` en modo herramienta integrada. Usó la suscripción de ChatGPT, sin `OPENAI_API_KEY`.
+- **Decisión:** por ahora alcanza con esta capacidad, y las tareas de imágenes van con `engine:codex`. Lo que no cubra (video, volumen o calidad) queda para `mcp-image`, que trabaja con APIs pagas.
+- **Primer uso:** el logo de qr-generator, y de ahí el favicon, los íconos de la app y la estructura de app (cabecera, menú, pantalla de carga e instalación en el celular).
+
 ## Fase futura de mejoras (backlog)
 - **4c, eventos de GitHub por webhook** (en lugar del polling cada 60 s): se posterga por decisión de Eduardo (2026-10-08), porque la latencia actual no molesta. Hay base para hacerlo: el túnel y los webhooks ya funcionan con Coolify.
 - **QA sobre las previews desplegadas** (service token de Access), cuando haya un proyecto con base de datos.

@@ -104,6 +104,18 @@ Todo corre en Docker Compose en la mini-PC. En el host solo está Docker.
 
 **Re-verificar** cuando se actualice la imagen de Canvas (`claude-agent-acp` o `codex-acp`): las rutas que lee cada motor pueden cambiar. La prueba consiste en armar un workspace en `/projects/_skilltest` con una skill señuelo en cada ruta, abrir una conversación por motor con `CanvasClient.create_conversation`, pedir "listá tus skills, sin usar herramientas" y borrar el workspace al terminar.
 
+## Generación de imágenes
+
+**Codex genera imágenes con la suscripción de ChatGPT**, sin API key. Usa la skill de sistema `imagegen` (`~/.codex/skills/.system/imagegen` en Canvas), en modo herramienta integrada (`image_gen`).
+- **Verificado el 2026-10-09** en Canvas, con `codex-acp` y `features.apps=false`:
+  - salió un PNG de 1254×1254 en unos 2 minutos;
+  - `auth_mode: chatgpt`, y `OPENAI_API_KEY` vacía tanto en el entorno como en `auth.json`.
+- **Las tareas de imágenes van con `engine:codex`:** Claude no tiene esta herramienta. El issue tiene que pedir **explícitamente** el modo integrado, porque el modo CLI de esa skill usa la API de OpenAI, que se paga aparte.
+- **Dónde quedan las imágenes:** Codex las guarda en `$CODEX_HOME/generated_images/`. El agente tiene que copiar las que se eligen dentro del repo, por ejemplo en `assets/branding/`.
+- **Consumo:** gasta del límite del plan de ChatGPT. Conviene pedir pocas variantes por issue.
+- **Logos e íconos:** el generador produce bitmaps. Pedir un concepto y después pasarlo a SVG, y derivar de ahí el favicon y los íconos de la app. Que no se parezca a marcas de terceros.
+- **Si algún día no alcanza** (por calidad, video, o más volumen): `mcp-image` (github.com/shinpr/mcp-image, MIT) es un MCP que trabaja con Gemini, OpenAI o Seedream, **con API keys pagas por imagen**. Las suscripciones Pro de Gemini o ChatGPT no incluyen sus APIs. Se instalaría en Canvas igual que el MCP de Playwright.
+
 ## Coolify y previews
 
 Coolify (instalado en `/data/coolify`, con su panel en https://coolify.maxiar.dev detrás de Access) despliega cada proyecto:
