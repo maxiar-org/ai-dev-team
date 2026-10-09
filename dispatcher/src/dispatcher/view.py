@@ -231,6 +231,21 @@ button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #30363d;
 """
 
 
+_APP_STATES = {"running": "Corriendo", "exited": "Detenida", "restarting": "Reiniciando", "starting": "Arrancando",
+               "degraded": "Degradada", "stopped": "Detenida"}
+_APP_HEALTH = {"healthy": "sana", "unhealthy": "con fallas", "unknown": "sin healthcheck"}
+
+
+def _app_status(status: str) -> tuple[str, str]:
+    """Traduce el estado de Coolify (`<estado>:<salud>`, p. ej. `running:unknown`) a clase CSS y texto legible."""
+    state, _, health = status.partition(":")
+    ok = state == "running" and health != "unhealthy"
+    text = _APP_STATES.get(state, state or "desconocido")
+    if health:
+        text += f" ({_APP_HEALTH.get(health, health)})"
+    return ("ok" if ok else "bad"), text
+
+
 def _a(url: str | None, text: str) -> str:
     return f'<a href="{escape(url or "#", quote=True)}">{escape(text)}</a>' if url else escape(text)
 
@@ -281,8 +296,8 @@ def render(view: View) -> str:
     out.append("<h2>🚀 Despliegues</h2>")
     out.append(_err(view, "coolify"))
     for a in view.apps:
-        ok = "ok" if a.status.startswith("running") else "bad"
-        out.append(f'<div class="card">{_a(a.url, a.name)} <span class="{ok}">{escape(a.status)}</span>'
+        ok, status = _app_status(a.status)
+        out.append(f'<div class="card">{_a(a.url, a.name)} <span class="{ok}" title="{escape(a.status)}">{escape(status)}</span>'
                    f'<div class="muted">Último deploy: {escape(a.last_deploy or "—")} ({escape(a.last_deploy_status or "—")})</div></div>')
     for p in view.previews:
         out.append(f'<div class="card">🔎 Preview {_a(p["url"], f"{p["repo"]} PR #{p["number"]}")}</div>')

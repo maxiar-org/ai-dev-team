@@ -151,3 +151,13 @@ def test_render_shows_linked_issue_and_dispatcher_error():
 def test_preview_template_with_domain_is_skipped():
     app = AppInfo("x", "maxiar-org/qr", "https://qr.maxiar.dev", "running", preview_template="{{pr_id}}.{{domain}}", preview_prs=(10,))
     assert build_view(Snapshot(now=NOW, prs=[pr(10)], apps=[app])).previews == []
+
+
+def test_app_status_traduce_estado_de_coolify():
+    from dispatcher.view import _app_status
+    assert _app_status("running:unknown") == ("ok", "Corriendo (sin healthcheck)")
+    assert _app_status("running:healthy") == ("ok", "Corriendo (sana)")
+    assert _app_status("running:unhealthy") == ("bad", "Corriendo (con fallas)")
+    assert _app_status("exited:unhealthy") == ("bad", "Detenida (con fallas)")
+    assert _app_status("running") == ("ok", "Corriendo")
+    assert _app_status("") == ("bad", "desconocido")
