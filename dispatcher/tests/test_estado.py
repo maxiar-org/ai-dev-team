@@ -171,3 +171,20 @@ def test_serve_binds_to_given_host():
     srv = serve(Page(), 0, host="127.0.0.1")
     assert srv.server_address[0] == "127.0.0.1"
     srv.server_close()
+
+
+def test_period_searches_always_include_is_issue_or_is_pr(tmp_path):
+    class RecordingGH(GH):
+        def __init__(self):
+            self.queries = []
+
+        def search_since(self, query):
+            self.queries.append(query)
+            return []
+
+    gh = RecordingGH()
+    c = Collector(gh, None, repos=("qr",), org="maxiar-org", bot_login="bot", ops_repo="ai-dev-team",
+                  state_path=tmp_path / "s.json", metrics_path=tmp_path / "m.csv", checker=lambda: [], expiries={})
+    c.period("2026-10-08T00:00:00Z")
+    assert len(gh.queries) == 3
+    assert all(" is:issue " in f" {q} " or " is:pr " in f" {q} " for q in gh.queries)  # GitHub responde 422 si falta
