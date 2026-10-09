@@ -1,6 +1,6 @@
 """Servidor de resúmenes del operador (fase 4e).
 
-Escucha en :8091 (solo en la red interna `resumen`). `estado` le manda los datos del período y este servidor
+Escucha en :8091, solo en la IP de la red interna `resumen`. `estado` le manda los datos del período y este servidor
 ejecuta `claude -p` con un prompt fijo y herramientas de solo lectura de gh. Cada resumen se guarda en ~/resumenes/.
 Python 3.11, solo librería estándar.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import socket
 import subprocess
 import tempfile
 import threading
@@ -121,7 +122,7 @@ class Summaries:
                 self.started_at = None
 
 
-def make_server(summaries: Summaries, token: str, port: int = PORT) -> ThreadingHTTPServer:
+def make_server(summaries: Summaries, token: str, port: int = PORT, host: str = "0.0.0.0") -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         def _authorized(self) -> bool:
             got = self.headers.get("Authorization", "")
@@ -159,7 +160,7 @@ def make_server(summaries: Summaries, token: str, port: int = PORT) -> Threading
         def log_message(self, *args):
             pass
 
-    return ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    return ThreadingHTTPServer((host, port), Handler)
 
 
 def main() -> None:
@@ -167,7 +168,9 @@ def main() -> None:
     if not token:
         raise SystemExit("Falta RESUMEN_TOKEN: el servidor de resúmenes no arranca")
     summaries = Summaries(Path.home() / "resumenes")
-    make_server(summaries, token).serve_forever()
+    # Solo en la red interna `resumen`: el alias resumen-operador resuelve a esa IP (Canvas, en `default`, no la ve).
+    host = socket.gethostbyname(os.environ.get("RESUMEN_HOST", "resumen-operador"))
+    make_server(summaries, token, host=host).serve_forever()
 
 
 if __name__ == "__main__":

@@ -114,7 +114,7 @@ services:
       COOLIFY_API_TOKEN: ${COOLIFY_API_TOKEN:-}
       GITHUB_TOKEN_EXPIRES: ${GITHUB_TOKEN_EXPIRES:-}
       CLAUDE_TOKEN_EXPIRES: ${CLAUDE_TOKEN_EXPIRES:-}
-      RESUMEN_URL: http://operador:8091
+      RESUMEN_URL: http://resumen-operador:8091
       RESUMEN_TOKEN: ${RESUMEN_TOKEN:-}
       ESTADO_ORIGIN: https://estado.maxiar.dev
     volumes:
@@ -131,7 +131,10 @@ services:
     init: true
     group_add:
       - "${DOCKER_GID:-999}"  # grupo docker del host, para usar docker.sock
-    networks: [default, resumen]
+    networks:
+      default:
+      resumen:
+        aliases: [resumen-operador]  # resumen.py escucha solo en esta IP
     environment:
       RESUMEN_TOKEN: ${RESUMEN_TOKEN:-}  # servidor de resúmenes a pedido (operador/resumen.py, :8091)
     volumes:

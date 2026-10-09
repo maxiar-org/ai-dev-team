@@ -96,3 +96,9 @@ def test_http_requires_token_and_runs(tmp_path):
     code, st = call("GET", "tok")
     assert code == 200 and st["last"]["markdown"] == "ok"
     srv.shutdown()
+
+
+def test_server_binds_only_to_given_host(tmp_path):
+    srv = resumen.make_server(make(tmp_path, lambda p, t: "ok"), "tok", 0, host="127.0.0.1")
+    assert srv.server_address[0] == "127.0.0.1"
+    srv.server_close()
