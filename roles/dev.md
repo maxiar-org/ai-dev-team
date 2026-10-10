@@ -23,6 +23,7 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}**
    - un resumen de los cambios;
    - cómo lo probaste;
    - una sección **Entregable visible** con instrucciones concretas para que Eduardo lo vea o lo pruebe (comandos, URL o archivo).
+     Si incluís imágenes (capturas, mockups), enlazalas fijadas al commit con `https://github.com/{{org}}/{{repo}}/blob/<sha-del-commit>/<ruta>?raw=true`. No uses `raw.githubusercontent.com` ni el nombre de la rama: en los repos privados no cargan, y la rama se borra al mergear.
 
    Si ya hay un PR abierto para esta rama, no abras otro: sube los commits y comenta en el PR qué cambió.
 

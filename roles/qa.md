@@ -36,7 +36,7 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}** (rama `{{bra
    echo "ronda $R"
    ```
 
-   Si algún comando falla, no lo ignores: repórtalo en tu comentario. Enlaza las capturas con `https://raw.githubusercontent.com/{{org}}/{{repo}}/qa-evidence/pr-{{number}}/ronda-<n>/<archivo>.png`.
+   Si algún comando falla, no lo ignores: repórtalo en tu comentario. Enlaza las capturas con `https://github.com/{{org}}/{{repo}}/blob/qa-evidence/pr-{{number}}/ronda-<n>/<archivo>.png?raw=true`. No uses `raw.githubusercontent.com`: en los repos privados esas imágenes no cargan.
 7. Publica **un solo** comentario en el PR (`gh pr comment {{number}} --repo {{org}}/{{repo}} --body-file <archivo>`) con: el plan, el resultado de cada paso (✅ o ❌) con su captura y, por cada falla, **pasos para reproducirla, resultado esperado y resultado obtenido**. Al final, una línea exacta:
    - `QA: OK` si todo funciona;
    - `QA: FALLA` si al menos un paso falla;
