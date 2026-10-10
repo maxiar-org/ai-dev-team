@@ -86,7 +86,19 @@ Guía para incorporar un proyecto al AI Dev Team y para saber **dónde va cada c
 - [ ] Crear una aplicación de Access para las previews (`<proyecto>-pr-*`), y otra para la versión estable si no es pública.
 - [ ] Secretos solo como variables de entorno de Coolify, para producción y previews.
 
-### 5. Primer lote de issues
+### 5. Planificación y primer lote de issues
+- [ ] **Una épica por fase o release:**
+  - es un issue con el label `epic` (azul, `3E4B9E`) y un **milestone** con el nombre de la fase;
+  - lleva **objetivo**, **criterio de salida**, **fuera de alcance** y un checklist con lo que no es un issue de agente: validaciones de Eduardo y tareas de plataforma de Claude Code (Coolify, Access, MCP, skills);
+  - las tareas de los agentes son **sub-issues nativos** de la épica, y GitHub muestra el progreso (3/8) en la épica y en la lista;
+  - el dispatcher ignora las épicas, porque no llevan `agent:dev`.
+  ```bash
+  id=$(gh api repos/maxiar-org/<proyecto>/issues/<N> --jq .id)
+  gh api -X POST repos/maxiar-org/<proyecto>/issues/<épica>/sub_issues -F sub_issue_id=$id
+  ```
+- [ ] **El detalle va de a una fase:** solo la fase activa tiene issues concretos. Las demás épicas llevan sus tareas como checkboxes y se convierten en sub-issues cuando arranca la fase.
+- [ ] **Tablero de GitHub Projects** (`<PROYECTO> Roadmap`), con vista Kanban por estado y vista por milestone. Requiere el permiso `project` en `gh` (`gh auth refresh -s project -h github.com`).
+- [ ] **Mockups recortados:** si el proyecto los tiene, recortar cada pantalla en `assets/mockups/screens/` y citar la referencia en cada issue de UI. Pedir en el PR la comparación lado a lado y tests de golden.
 - [ ] Issues chicos, cada uno con **criterios de aceptación**, **Entregable visible**, **Fuera de alcance** y **Depende de #N**.
 - [ ] `engine:claude` o `engine:codex` cuando importe el motor (por ejemplo, diseño con skills o imágenes).
 - [ ] Empezar con 1 o 2 issues con `agent:dev`, para ver cómo trabajan los agentes con el proyecto antes de cargar el resto.
