@@ -80,6 +80,9 @@ Todo corre en Docker Compose en la mini-PC. En el host solo está Docker.
 - **Alertas:** el `watchdog` abre issues `[ops]` en `ai-dev-team` si se cae Canvas, el dispatcher, el túnel o el disco pasa el 85 %, y los cierra solo cuando se recuperan. También avisa 14 días antes de que venzan los tokens (`GITHUB_TOKEN_EXPIRES`, `CLAUDE_TOKEN_EXPIRES`).
 - **Mudar a otra máquina:** instalar Docker, copiar el repo **exactamente en `/opt/ai-dev-team`**, el `.env` y los volúmenes, y ejecutar `docker compose up -d`. La ruta es fija porque el operador ejecuta `docker compose` desde su contenedor y el daemon del host resuelve los bind mounts con esa ruta. Después, aplica los permisos de `pilot/` (ver Problemas conocidos).
 
+## Proyectos nuevos y forma de trabajo
+Para sumar un proyecto y saber dónde va cada conversación y cada cambio (Claude Code en la Mac, el operador o los agentes), ver **[docs/nuevo-proyecto.md](docs/nuevo-proyecto.md)**. Resumen: las conversaciones se abren siempre desde `ai-dev-team`, con el repo del proyecto como directorio adicional (`.claude/settings.local.json` → `additionalDirectories`).
+
 ## Skills para los agentes
 
 **Convención:** las skills van en el repo de cada proyecto, en **`.agents/skills/<skill>/`**, y **`.claude/skills` es un enlace simbólico** a `../.agents/skills`. Así hay una sola copia y la ven los dos motores. Ejemplo: [qr-generator#25](https://github.com/maxiar-org/qr-generator/pull/25).

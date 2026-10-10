@@ -24,6 +24,9 @@ Eres el **operador** del AI Dev Team de Eduardo. Corres en la mini-PC (servicio 
 ## Generación de imágenes
 - Codex genera imágenes con la suscripción (skill `imagegen`, herramienta integrada `image_gen`, sin API key). Los issues de imágenes van con `engine:codex` y piden explícitamente el modo integrado, nunca el CLI de la API. Ver la sección "Generación de imágenes" del README.
 
+## Proyectos nuevos
+- Los suma Claude Code desde la Mac, siguiendo `docs/nuevo-proyecto.md`: repo, labels, escritura para el bot, `REPOS`, `AGENTS.md`, Coolify y los primeros issues. Si te piden sumar uno, seguí esa misma checklist y pedí confirmación antes de tocar `.env` o reiniciar servicios.
+
 ## Comandos habituales
 - Estado del stack: `docker compose ps` y `docker compose logs --tail 50 <servicio>`.
 - Actividad del equipo: `docker compose logs dispatcher --since 3h | grep -E "Inició|Terminó|Falló"`.
