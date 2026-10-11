@@ -156,6 +156,19 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
 
 ## Fase futura de mejoras (backlog)
 - **4c, eventos de GitHub por webhook** (en lugar del polling cada 60 s): se posterga por decisión de Eduardo (2026-10-08), porque la latencia actual no molesta. Hay base para hacerlo: el túnel y los webhooks ya funcionan con Coolify.
+- **Gemini como tercer motor, para QA y review** (idea de Eduardo, 2026-10-10; para analizar):
+  - **Por qué:** hoy el reviewer es "el otro motor" y bloquea a ese motor para programar. Con Gemini en QA y review, Claude y Codex quedan libres para programar. Además, Gemini es fuerte comparando imágenes, útil para la fidelidad a los mockups en nikito.
+  - **Por qué no como dev:** la Fase 1 de nikito es casi una cadena de dependencias, y el cuello de botella son las revisiones y los merges de Eduardo. Se reevalúa si aparecen muchas tareas independientes (Fases 2 y 3).
+  - **Escalonado:**
+    1. Solo QA (`qa_engine` ya es configurable), probado con 3 o 4 PRs de nikito y comparado con el QA actual.
+    2. Después, reviewer: `other_engine` hoy es binario y habría que generalizarlo.
+  - **Regla:** **las decisiones de arquitectura las toma siempre Claude.**
+    - Los ADR los escribe Claude Code al planificar, o van como issues con `engine:claude`.
+    - El reviewer y el QA de otro motor no deciden arquitectura: si ven un problema de diseño, marcan `needs:human`.
+  - **A verificar:**
+    - que Gemini CLI funcione por ACP dentro de Canvas;
+    - que el login con la suscripción Gemini Pro persista en el contenedor;
+    - que los términos de la suscripción permitan este uso automatizado.
 - **QA sobre las previews desplegadas** (service token de Access), cuando haya un proyecto con base de datos.
 - **Resumen del operador, ideas:** un resumen programado (por ejemplo, cada mañana) e historial navegable.
 - **Resumen del operador, menores:**
@@ -168,4 +181,5 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
   - un PR huérfano con `agent:working` aparece como "espera a Eduardo";
   - faltan los estados de CI `action_required` y `neutral`;
   - los logs de httpx en nivel INFO llenan los logs (unas 20 líneas por minuto).
+- **Dispatcher, PR mergeado durante una tarea:** si Eduardo mergea un PR mientras corre el fix, la tarea sigue y al terminar le pone `agent:review` a un PR ya cerrado. Pasó con nikito#15 y se resolvió a mano: se reabrió el issue y se abrió el PR #16 desde la misma rama. Conviene detectar el merge y avisar, o abrir el PR de seguimiento solo.
 - **Mejoras menores diferidas** de las revisiones de código (ver ledgers y bitácoras de cada fase).
