@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from .config import ENGINE_AGENT_SETTINGS
+from .config import BASE_MCP_CONFIG, ENGINE_AGENT_SETTINGS
 from .models import ConvInfo
 
 
@@ -46,21 +46,22 @@ class CanvasClient:
             base_url=base_url, timeout=30, headers={"X-Session-API-Key": api_key}
         )
 
-    def _mcp_config(self) -> dict[str, Any] | None:
-        """MCP servers configurados en Canvas (Customize → MCP Servers). Las conversaciones creadas
-        por API no los heredan si se manda agent_settings, así que se copian explícitamente."""
+    def _mcp_config(self) -> dict[str, Any]:
+        """BASE_MCP_CONFIG más los MCP servers configurados en Canvas (Customize → MCP Servers), que
+        pisan por nombre. Las conversaciones creadas por API no los heredan si se manda agent_settings,
+        así que se copian explícitamente."""
+        configured: dict[str, Any] = {}
         try:
             resp = self.http.get("/api/settings")
             resp.raise_for_status()
-            return (resp.json().get("agent_settings") or {}).get("mcp_config") or None
+            configured = (resp.json().get("agent_settings") or {}).get("mcp_config") or {}
         except (httpx.HTTPError, ValueError):
-            return None
+            pass
+        return {**BASE_MCP_CONFIG, **configured}
 
     def create_conversation(self, engine: str, working_dir: str, message: str) -> str:
         agent_settings: dict[str, Any] = dict(ENGINE_AGENT_SETTINGS[engine])
-        mcp = self._mcp_config()
-        if mcp:
-            agent_settings["mcp_config"] = mcp
+        agent_settings["mcp_config"] = self._mcp_config()
         payload = {
             "agent_settings": agent_settings,
             "workspace": {"working_dir": working_dir},

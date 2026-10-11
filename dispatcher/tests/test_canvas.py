@@ -4,6 +4,7 @@ import pytest
 import respx
 
 from dispatcher.canvas import CanvasBusy, CanvasClient
+from dispatcher.config import BASE_MCP_CONFIG
 from dispatcher.models import ConvInfo
 
 ID1 = "6f1c2d3e000040008000000000000001"
@@ -27,7 +28,7 @@ def test_create_conversation_sends_engine_workspace_and_message(canvas):
     assert canvas.create_conversation("claude", "/projects/qr/issue-3", "Hola") == ID1
     request = created.calls.last.request
     assert json.loads(request.content) == {
-        "agent_settings": {"agent_kind": "acp", "acp_server": "claude-code"},
+        "agent_settings": {"agent_kind": "acp", "acp_server": "claude-code", "mcp_config": BASE_MCP_CONFIG},
         "workspace": {"working_dir": "/projects/qr/issue-3"},
         "initial_message": {"role": "user", "content": [{"type": "text", "text": "Hola"}], "run": True},
     }
@@ -85,18 +86,38 @@ def test_final_response_and_pause(canvas):
 
 
 @respx.mock
-def test_create_conversation_includes_mcp_servers_configured_in_canvas(canvas):
-    mcp = {"playwright": {"transport": "stdio", "command": "npx", "args": ["-y", "@playwright/mcp"], "enabled": True}}
-    route("GET", "/api/settings").respond(json={"agent_settings": {"mcp_config": mcp, "acp_server": "codex"}})
+def test_create_conversation_always_includes_base_mcp_servers(canvas):
+    route("GET", "/api/settings").respond(json={"agent_settings": {"mcp_config": {}}})
     created = route("POST", "/api/conversations").respond(201, json={"id": ID1})
     canvas.create_conversation("claude", "/p", "Hola")
     settings = json.loads(created.calls.last.request.content)["agent_settings"]
-    assert settings == {"agent_kind": "acp", "acp_server": "claude-code", "mcp_config": mcp}
+    assert settings == {"agent_kind": "acp", "acp_server": "claude-code", "mcp_config": BASE_MCP_CONFIG}
+    assert set(BASE_MCP_CONFIG) == {"playwright", "dart"}
 
 
 @respx.mock
-def test_create_conversation_works_if_settings_are_unreadable(canvas):
+def test_create_conversation_adds_mcp_servers_configured_in_canvas(canvas):
+    extra = {"otro": {"transport": "stdio", "command": "otro-mcp", "args": [], "enabled": True}}
+    route("GET", "/api/settings").respond(json={"agent_settings": {"mcp_config": extra, "acp_server": "codex"}})
+    created = route("POST", "/api/conversations").respond(201, json={"id": ID1})
+    canvas.create_conversation("claude", "/p", "Hola")
+    mcp = json.loads(created.calls.last.request.content)["agent_settings"]["mcp_config"]
+    assert mcp == {**BASE_MCP_CONFIG, **extra}
+
+
+@respx.mock
+def test_canvas_settings_override_a_base_mcp_server(canvas):
+    pw = {"transport": "stdio", "command": "npx", "args": ["-y", "@playwright/mcp", "--headless"], "enabled": True}
+    route("GET", "/api/settings").respond(json={"agent_settings": {"mcp_config": {"playwright": pw}}})
+    created = route("POST", "/api/conversations").respond(201, json={"id": ID1})
+    canvas.create_conversation("codex", "/p", "Hola")
+    mcp = json.loads(created.calls.last.request.content)["agent_settings"]["mcp_config"]
+    assert mcp["playwright"] == pw and mcp["dart"] == BASE_MCP_CONFIG["dart"]
+
+
+@respx.mock
+def test_create_conversation_uses_base_mcp_if_settings_are_unreadable(canvas):
     route("GET", "/api/settings").respond(500)
     created = route("POST", "/api/conversations").respond(201, json={"id": ID1})
     canvas.create_conversation("codex", "/p", "Hola")
-    assert "mcp_config" not in json.loads(created.calls.last.request.content)["agent_settings"]
+    assert json.loads(created.calls.last.request.content)["agent_settings"]["mcp_config"] == BASE_MCP_CONFIG
