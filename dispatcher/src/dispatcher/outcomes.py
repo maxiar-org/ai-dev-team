@@ -100,11 +100,14 @@ def outcome_for(
         )
 
     if task.role in ("dev", "docs"):
+        # Si el agente le preguntó algo a Eduardo, un PR con trabajo parcial todavía no se revisa.
+        if LABEL_HUMAN in current_labels:
+            return done("needs_human")
+        if pr is not None and pr.draft:
+            return done("pr_borrador")
         if pr is not None:
             ops.append(AddLabels(pr.number, (LABEL_REVIEW, f"engine:{task.engine}")))
             return done("pr_abierto")
-        if LABEL_HUMAN in current_labels:
-            return done("needs_human")
         return escalate(
             "sin_resultado",
             "El agente terminó sin abrir un PR ni pedir ayuda.\n\n"

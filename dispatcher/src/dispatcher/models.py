@@ -48,6 +48,7 @@ class Item:
     head_ref: str | None = None  # rama del PR
     node_id: str = ""  # id GraphQL, para el tablero de Projects
     mergeable_state: str | None = None  # solo PRs: "dirty" = conflictos con la base
+    draft: bool = False  # solo PRs: en borrador no pasan a review ni a QA
 
     @property
     def key(self) -> str:

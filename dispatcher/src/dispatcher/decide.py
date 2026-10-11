@@ -161,6 +161,8 @@ def _label_candidates(items: list[Item], cfg: Config) -> list[StartTask]:
         labels = item.labels
         if LABEL_WORKING in labels or LABEL_HUMAN in labels:
             continue
+        if item.kind == "pr" and item.draft and labels & {LABEL_REVIEW, LABEL_QA}:
+            continue  # un borrador no se revisa ni se prueba: ocuparía un motor sin nada que revisar
         dev_engine = engine_from_labels(labels, cfg.default_dev_engine)
         if item.kind == "issue" and LABEL_DOCS in labels:
             out.append(StartTask(item, "docs", engine_from_labels(labels, cfg.docs_engine), "label"))

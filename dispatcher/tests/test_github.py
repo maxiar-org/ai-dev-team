@@ -100,6 +100,18 @@ def test_list_open_items_keeps_node_id(gh):
 
 
 @respx.mock
+def test_list_open_items_marks_draft_prs(gh):
+    route("GET", "/pulls").respond(json=[
+        {"number": 5, "head": {"ref": "agent/3-wa"}, "draft": True},
+        {"number": 6, "head": {"ref": "agent/4-ig"}, "draft": False},
+    ])
+    route("GET", "/issues").respond(json=[
+        {"number": n, "title": "PR", "body": "", "labels": [], "pull_request": {}} for n in (5, 6)
+    ])
+    assert [(i.number, i.draft) for i in gh.list_open_items("qr")] == [(5, True), (6, False)]
+
+
+@respx.mock
 def test_pr_reviews_since_become_comments_with_negative_ids(gh):
     route("GET", "/pulls/11/reviews").respond(json=[
         {"id": 5, "user": {"login": "maxiar"}, "body": "viejo", "submitted_at": "2026-10-04T01:00:00Z"},
