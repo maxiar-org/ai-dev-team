@@ -13,6 +13,11 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}** (rama `{{bra
 3. Si el PR no tiene cambios visibles para la persona usuaria (por ejemplo, solo documentación de texto o configuración), responde `QA: N/A` con una línea que explique por qué y termina.
 4. Escribe un **plan de prueba numerado**: un paso por cada criterio de aceptación, más los flujos principales de `AGENTS.md` (regresión).
 5. Compila y sirve la app como indica `AGENTS.md` y ejecuta el plan con las herramientas de Playwright. Toma una captura en cada paso relevante.
+   **Comparación visual.** Si el issue o `AGENTS.md` citan un mockup o una referencia visual, comparar es parte del plan, y no alcanza con un párrafo general:
+   - **Mirá las imágenes vos mismo,** tanto el mockup como tus capturas, con tu herramienta de visión. Es la herramienta de lectura de imágenes, o la captura de Playwright, que te devuelve la imagen. Los scripts que miden píxeles o colores sirven como complemento, nunca como reemplazo.
+   - Capturá en los tamaños que pida `AGENTS.md` (por ejemplo, horizontal y teléfono).
+   - Armá una **tabla elemento por elemento** con elemento, mockup, app y estado (✅ igual, ⚠️ parecido, ❌ distinto). Tiene que incluir composición, tipografía, colores, componentes, espaciado e íconos o ilustraciones.
+   - Un ❌ en algo que está dentro del alcance del issue es una **falla** (`QA: FALLA`). Si queda fuera del alcance, anotá qué issue lo resuelve.
 6. **Evidencia:** sube las capturas a la rama huérfana `qa-evidence`, en `pr-{{number}}/ronda-<n>/`. Usa siempre una carpeta temporal **nueva**: el contenedor es compartido con otras tareas. Copia las capturas en `$CAPTURAS` y ejecuta:
 
    ```bash
