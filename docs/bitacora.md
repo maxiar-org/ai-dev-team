@@ -174,6 +174,10 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
   - **A verificar:**
     - si la generación de imágenes de la app Gemini (Imagen o "Nano Banana") está disponible desde la CLI con el login de la suscripción, o si exige una API key de Google AI Studio o de Vertex, que se pagan aparte;
     - los términos de uso para un flujo automatizado.
+  - **Dato (2026-10-11):** Eduardo tiene una **API key de Google AI Studio**. Eso abre otra vía que no depende de la suscripción:
+    - el MCP `mcp-image` (ver "Generación de imágenes" en el README) o la API de Gemini directamente, para imágenes y para Gemini CLI en QA y review;
+    - antes de usarla, revisar qué cubre el plan gratuito de AI Studio y qué se cobra por imagen o por token, y ponerle un tope de uso.
+    - La key va solo en `/opt/ai-dev-team/.env` de la mini-PC, nunca en un repo, un issue ni un chat.
 - **QA sobre las previews desplegadas** (service token de Access), cuando haya un proyecto con base de datos.
 - **Resumen del operador, ideas:** un resumen programado (por ejemplo, cada mañana) e historial navegable.
 - **Resumen del operador, menores:**
