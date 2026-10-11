@@ -107,6 +107,56 @@ Para sumar un proyecto y saber dónde va cada conversación y cada cambio (Claud
 
 **Re-verificar** cuando se actualice la imagen de Canvas (`claude-agent-acp` o `codex-acp`): las rutas que lee cada motor pueden cambiar. La prueba consiste en armar un workspace en `/projects/_skilltest` con una skill señuelo en cada ruta, abrir una conversación por motor con `CanvasClient.create_conversation`, pedir "listá tus skills, sin usar herramientas" y borrar el workspace al terminar.
 
+## MCP para los agentes
+
+Los MCP servers son herramientas extra que reciben los agentes (Claude y Codex) en cada conversación de Canvas. Hoy son dos, y los reciben todos los agentes en todos los proyectos:
+
+| MCP | Comando | Para qué |
+|---|---|---|
+| `playwright` | `npx -y @playwright/mcp`, con el Chromium del sistema, headless | QA y capturas: navegar la app, hacer clic y sacar capturas |
+| `dart` | `dart mcp-server`, que viene con el SDK de la imagen | Análisis, LSP, pub.dev, errores en tiempo de ejecución, árbol de widgets y hot reload en proyectos Dart y Flutter |
+
+**Dónde se configuran:** en **`BASE_MCP_CONFIG`**, en [`dispatcher/src/dispatcher/config.py`](dispatcher/src/dispatcher/config.py).
+- El dispatcher los manda en cada `create_conversation`.
+- Si en el panel de Canvas hay MCP configurados (Customize → MCP Servers), se suman y reemplazan por nombre.
+- **No dependas solo del panel de Canvas:** el 2026-10-09 sus ajustes se reescribieron, la lista de MCP quedó vacía y los agentes trabajaron días sin Playwright sin que nadie lo notara.
+
+**Cómo sumar un MCP nuevo** (lo hacen Eduardo o Claude Code, por PR a `ai-dev-team`):
+1. **Evaluarlo antes:**
+   - licencia y mantenimiento;
+   - a qué accede (red, archivos, cuentas);
+   - si necesita secretos o API keys pagas.
+
+   Un MCP con acceso a cuentas personales (correo, Drive, etc.) no va: los agentes leen issues que podría escribir cualquiera.
+2. **Que el comando exista en Canvas:**
+   - si viene con `npx` o con un SDK que ya está en la imagen, no hace falta nada;
+   - si no, se instala en [`canvas/Dockerfile`](canvas/Dockerfile) **con versión fijada**.
+3. **Probarlo dentro del contenedor** con [`scripts/mcp-probe.py`](scripts/mcp-probe.py), que hace el handshake y lista las herramientas:
+   ```bash
+   docker compose cp scripts/mcp-probe.py canvas:/tmp/mcp-probe.py
+   docker compose exec -T canvas python3 /tmp/mcp-probe.py <comando> <args...>
+   ```
+   Mirá también cuánto tarda en arrancar: se lanza en cada conversación.
+4. **Sumarlo a `BASE_MCP_CONFIG`:**
+   - formato: `{"transport": "stdio", "command": ..., "args": [...], "enabled": true}`;
+   - con su test en `dispatcher/tests/test_canvas.py`, donde hay que actualizar el conjunto de nombres esperado.
+5. **Secretos:** nunca van en el repo. Van en `/opt/ai-dev-team/.env` y llegan al contenedor `canvas` por `docker-compose.yml`. Verificá con el probe que el proceso del MCP los recibe.
+6. **Decirles a los agentes cuándo usarlo:** en `roles/*.md` si es general, o en el `AGENTS.md` del proyecto si es de un proyecto. Las herramientas se llaman `mcp__<nombre>__<herramienta>`.
+7. **Desplegar** sin tareas activas:
+   ```bash
+   git pull
+   docker compose up -d --no-deps --build dispatcher
+   ```
+   Si cambió `canvas/Dockerfile`, recompilar también `canvas`.
+8. **Verificar** que una conversación nueva lo recibió. En la mini-PC:
+   ```bash
+   sudo grep -o '"mcp_config":{.\{0,200\}' /var/lib/docker/volumes/ai-dev-team_canvas-state/_data/agent-canvas/conversations/<id>/base_state.json
+   ```
+   Para encontrar la conversación más reciente, listá esa carpeta con `ls -t`.
+9. **Anotarlo** en la tabla de arriba y en `docs/bitacora.md`.
+
+**Re-verificar** cuando se actualice la imagen de Canvas o el SDK: la versión del MCP de Dart viene con el SDK de Flutter (1.2.0 con Dart 3.13.5).
+
 ## Generación de imágenes
 
 **Codex genera imágenes con la suscripción de ChatGPT**, sin API key. Usa la skill de sistema `imagegen` (`~/.codex/skills/.system/imagegen` en Canvas), en modo herramienta integrada (`image_gen`).
@@ -117,7 +167,7 @@ Para sumar un proyecto y saber dónde va cada conversación y cada cambio (Claud
 - **Dónde quedan las imágenes:** Codex las guarda en `$CODEX_HOME/generated_images/`. El agente tiene que copiar las que se eligen dentro del repo, por ejemplo en `assets/branding/`.
 - **Consumo:** gasta del límite del plan de ChatGPT. Conviene pedir pocas variantes por issue.
 - **Logos e íconos:** el generador produce bitmaps. Pedir un concepto y después pasarlo a SVG, y derivar de ahí el favicon y los íconos de la app. Que no se parezca a marcas de terceros.
-- **Si algún día no alcanza** (por calidad, video, o más volumen): `mcp-image` (github.com/shinpr/mcp-image, MIT) es un MCP que trabaja con Gemini, OpenAI o Seedream, **con API keys pagas por imagen**. Las suscripciones Pro de Gemini o ChatGPT no incluyen sus APIs. Se instalaría en Canvas igual que el MCP de Playwright.
+- **Si algún día no alcanza** (por calidad, video, o más volumen): `mcp-image` (github.com/shinpr/mcp-image, MIT) es un MCP que trabaja con Gemini, OpenAI o Seedream, **con API keys pagas por imagen**. Las suscripciones Pro de Gemini o ChatGPT no incluyen sus APIs. Se sumaría siguiendo la sección [MCP para los agentes](#mcp-para-los-agentes).
 
 ## Coolify y previews
 
