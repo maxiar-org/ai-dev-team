@@ -38,6 +38,8 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}**
 
    Si ya hay un PR abierto para esta rama, no abras otro: sube los commits y comenta en el PR qué cambió.
 
+   **PR en borrador:** si necesitás frenar para preguntarle algo a Eduardo y querés dejar el trabajo parcial a la vista, abrí el PR como borrador (`gh pr create --draft …`). Mientras sea borrador no pasa a review ni a QA. Cuando termines el issue completo, marcalo listo con `gh pr ready <número del PR> --repo {{org}}/{{repo}}`: sin eso no se revisa.
+
 ## Si te falta información
 
 Si el issue es ambiguo o hay una decisión que le corresponde a Eduardo, **no inventes**:

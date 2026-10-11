@@ -169,6 +169,11 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
     - que Gemini CLI funcione por ACP dentro de Canvas;
     - que el login con la suscripción Gemini Pro persista en el contenedor;
     - que los términos de la suscripción permitan este uso automatizado.
+- **Gemini para generar imágenes** (idea de Eduardo, 2026-10-11; para analizar junto con Gemini para QA y review):
+  - **El caso:** si la suscripción Gemini Pro incluye generación de imágenes usable desde Gemini CLI (o un MCP) sin API key paga, sería un segundo motor de imágenes además del `image_gen` de Codex. Serviría de respaldo cuando Codex no tiene cupo o su herramienta falla, como pasó con nikito#4 (HTTP 503).
+  - **A verificar:**
+    - si la generación de imágenes de la app Gemini (Imagen o "Nano Banana") está disponible desde la CLI con el login de la suscripción, o si exige una API key de Google AI Studio o de Vertex, que se pagan aparte;
+    - los términos de uso para un flujo automatizado.
 - **QA sobre las previews desplegadas** (service token de Access), cuando haya un proyecto con base de datos.
 - **Resumen del operador, ideas:** un resumen programado (por ejemplo, cada mañana) e historial navegable.
 - **Resumen del operador, menores:**

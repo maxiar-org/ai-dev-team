@@ -51,6 +51,12 @@ def test_engine_label_overrides_default(cfg):
     assert start.engine == "claude"
 
 
+@pytest.mark.parametrize("label", ["agent:review", "agent:qa"])
+def test_draft_pr_is_not_reviewed_or_tested(cfg, label):
+    draft = dataclasses.replace(pr(5, label, "engine:codex"), draft=True)
+    assert starts(decide([draft], [], {}, State(), cfg, NOW)) == []
+
+
 def test_review_uses_the_other_engine(cfg):
     [start] = starts(decide([pr(5, "agent:review", "engine:codex")], [], {}, State(), cfg, NOW))
     assert (start.role, start.engine) == ("review", "claude")

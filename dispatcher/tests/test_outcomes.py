@@ -8,8 +8,8 @@ def task(role="dev", kind="issue", number=3, engine="codex", trigger="label"):
     return ActiveTask("qr", number, kind, role, engine, trigger, "conv-1", 0.0, "/p")
 
 
-def pr_item(number=7, head="agent/3-whatsapp", body=""):
-    return Item("qr", number, "pr", "PR", body, frozenset(), head)
+def pr_item(number=7, head="agent/3-whatsapp", body="", draft=False):
+    return Item("qr", number, "pr", "PR", body, frozenset(), head, draft=draft)
 
 
 def test_dev_with_pr_sends_it_to_review():
@@ -20,6 +20,17 @@ def test_dev_with_pr_sends_it_to_review():
         RemoveLabel(3, "agent:dev"),
         AddLabels(7, ("agent:review", "engine:codex")),
     )
+
+
+def test_dev_that_asked_for_help_does_not_send_its_pr_to_review():
+    # El agente dejó un PR con trabajo parcial y le preguntó algo a Eduardo: no hay nada que revisar todavía.
+    out = outcome_for(task(), "finished", "", frozenset({"needs:human"}), pr_item(), 0, 2)
+    assert (out.result, out.ops) == ("needs_human", (RemoveLabel(3, "agent:working"), RemoveLabel(3, "agent:dev")))
+
+
+def test_dev_with_draft_pr_does_not_send_it_to_review():
+    out = outcome_for(task(), "finished", "", frozenset(), pr_item(draft=True), 0, 2)
+    assert (out.result, out.ops) == ("pr_borrador", (RemoveLabel(3, "agent:working"), RemoveLabel(3, "agent:dev")))
 
 
 def test_dev_that_asked_for_help_only_clears_working():

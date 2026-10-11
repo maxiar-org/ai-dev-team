@@ -48,10 +48,9 @@ class GitHubClient:
 
     def list_open_items(self, repo: str) -> list[Item]:
         base = self._repo(repo)
-        heads = {
-            p["number"]: p["head"]["ref"]
-            for p in self._paginate(f"{base}/pulls", {"state": "open", "per_page": 100})
-        }
+        pulls = self._paginate(f"{base}/pulls", {"state": "open", "per_page": 100})
+        heads = {p["number"]: p["head"]["ref"] for p in pulls}
+        drafts = {p["number"] for p in pulls if p.get("draft")}
         items = []
         for raw in self._paginate(f"{base}/issues", {"state": "open", "per_page": 100}):
             is_pr = "pull_request" in raw
@@ -65,6 +64,7 @@ class GitHubClient:
                     labels=frozenset(label["name"] for label in raw.get("labels", [])),
                     head_ref=heads.get(raw["number"]) if is_pr else None,
                     node_id=raw.get("node_id", ""),
+                    draft=raw["number"] in drafts,
                 )
             )
         return items
