@@ -17,6 +17,8 @@ services:
       # Suscripciones (opción C del spec). Para el respaldo pagado ver README.
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       CODEX_AUTH_JSON: ${CODEX_AUTH_JSON:-}
+      # Opcional: habilita el MCP de imágenes con Gemini (mcp-image). Tiene costo por imagen.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # gh y git dentro de las conversaciones actúan como maxiar-ai-dev-team-bot.
       GH_TOKEN: ${GITHUB_TOKEN:?falta GITHUB_TOKEN en .env}
     volumes:

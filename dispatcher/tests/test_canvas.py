@@ -92,7 +92,7 @@ def test_create_conversation_always_includes_base_mcp_servers(canvas):
     canvas.create_conversation("claude", "/p", "Hola")
     settings = json.loads(created.calls.last.request.content)["agent_settings"]
     assert settings == {"agent_kind": "acp", "acp_server": "claude-code", "mcp_config": BASE_MCP_CONFIG}
-    assert set(BASE_MCP_CONFIG) == {"playwright", "dart"}
+    assert set(BASE_MCP_CONFIG) == {"playwright", "dart", "image"}
 
 
 @respx.mock
