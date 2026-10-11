@@ -1,0 +1,14 @@
+#!/bin/sh
+# MCP de imágenes con Gemini (mcp-image). La API key no viaja en la config de MCP ni en las
+# conversaciones: init-credentials.sh la deja en un archivo privado al arrancar el contenedor.
+key_file="$HOME/.config/mcp-image/gemini_key"
+if [ ! -s "$key_file" ]; then
+  echo "mcp-image: falta GEMINI_API_KEY en /opt/ai-dev-team/.env (ver README, MCP para los agentes)" >&2
+  exit 1
+fi
+GEMINI_API_KEY="$(cat "$key_file")"
+export GEMINI_API_KEY
+export IMAGE_PROVIDER=gemini
+export IMAGE_OUTPUT_DIR="${IMAGE_OUTPUT_DIR:-/tmp/mcp-image}"
+mkdir -p "$IMAGE_OUTPUT_DIR"
+exec npx -y mcp-image@0.14.0

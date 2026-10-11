@@ -109,12 +109,13 @@ Para sumar un proyecto y saber dónde va cada conversación y cada cambio (Claud
 
 ## MCP para los agentes
 
-Los MCP servers son herramientas extra que reciben los agentes (Claude y Codex) en cada conversación de Canvas. Hoy son dos, y los reciben todos los agentes en todos los proyectos:
+Los MCP servers son herramientas extra que reciben los agentes (Claude y Codex) en cada conversación de Canvas. Hoy son tres, y los reciben todos los agentes en todos los proyectos:
 
 | MCP | Comando | Para qué |
 |---|---|---|
 | `playwright` | `npx -y @playwright/mcp`, con el Chromium del sistema, headless | QA y capturas: navegar la app, hacer clic y sacar capturas |
 | `dart` | `dart mcp-server`, que viene con el SDK de la imagen | Análisis, LSP, pub.dev, errores en tiempo de ejecución, árbol de widgets y hot reload en proyectos Dart y Flutter |
+| `image` | `mcp-image-gemini`: envoltorio de `mcp-image@0.14.0` con Gemini (ver `canvas/`) | Generar y editar imágenes con cualquier motor, incluido Claude. **Tiene costo por imagen** y necesita `GEMINI_API_KEY` en `.env` |
 
 **Dónde se configuran:** en **`BASE_MCP_CONFIG`**, en [`dispatcher/src/dispatcher/config.py`](dispatcher/src/dispatcher/config.py).
 - El dispatcher los manda en cada `create_conversation`.
@@ -167,7 +168,18 @@ Los MCP servers son herramientas extra que reciben los agentes (Claude y Codex) 
 - **Dónde quedan las imágenes:** Codex las guarda en `$CODEX_HOME/generated_images/`. El agente tiene que copiar las que se eligen dentro del repo, por ejemplo en `assets/branding/`.
 - **Consumo:** gasta del límite del plan de ChatGPT. Conviene pedir pocas variantes por issue.
 - **Logos e íconos:** el generador produce bitmaps. Pedir un concepto y después pasarlo a SVG, y derivar de ahí el favicon y los íconos de la app. Que no se parezca a marcas de terceros.
-- **Si algún día no alcanza** (por calidad, video, o más volumen): `mcp-image` (github.com/shinpr/mcp-image, MIT) es un MCP que trabaja con Gemini, OpenAI o Seedream, **con API keys pagas por imagen**. Las suscripciones Pro de Gemini o ChatGPT no incluyen sus APIs. Se sumaría siguiendo la sección [MCP para los agentes](#mcp-para-los-agentes).
+- **Imágenes de referencia livianas (aprendido el 2026-10-11 en nikito#4):**
+  - con un PNG de 1,2 MB (1254 px) como referencia, `image_gen` falla **siempre** con `http 503 … upstream connect error or disconnect/reset before headers`;
+  - la misma imagen en JPG de 768 px (unos 70 KB) funciona;
+  - antes de pasar referencias, convertilas a **JPG de hasta 768 px y menos de 300 KB** (Pillow está en el contenedor). El mensaje del 503 parece una caída de OpenAI, pero no lo es.
+- **Gemini como segundo generador:** el MCP `image` (`mcp-image` con Gemini, ver [MCP para los agentes](#mcp-para-los-agentes)) sirve con cualquier motor, también Claude.
+  - **Cuesta** unos USD 0,04 por imagen a 1024 px (precio de Google al 2026-10-11; para este modelo no hay plan gratuito oficial).
+  - **Orden de uso:**
+    1. el `image_gen` integrado de Codex, que entra en la suscripción;
+    2. Gemini, si Codex no tiene cupo, si su herramienta falla o si la tarea es de Claude.
+  - **Mantener el mismo personaje:** pasarle las referencias livianas y usar `maintainCharacterConsistency`.
+  - **Dónde quedan las imágenes:** en `/tmp/mcp-image` del contenedor; el agente copia al repo las que se eligen.
+  - **La key** va solo en `/opt/ai-dev-team/.env`. El contenedor la guarda en un archivo privado, y no aparece ni en la config de MCP ni en las conversaciones.
 
 ## Coolify y previews
 

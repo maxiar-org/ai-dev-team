@@ -34,6 +34,14 @@ BASE_MCP_CONFIG: dict[str, dict[str, object]] = {
         "args": ["mcp-server"],
         "enabled": True,
     },
+    # Imágenes con Gemini (mcp-image, ver canvas/mcp-image-gemini). Sin GEMINI_API_KEY en .env no arranca.
+    # Tiene costo por imagen: el image_gen integrado de Codex sigue siendo la primera opción.
+    "image": {
+        "transport": "stdio",
+        "command": "mcp-image-gemini",
+        "args": [],
+        "enabled": True,
+    },
 }
 
 class ConfigError(ValueError):
