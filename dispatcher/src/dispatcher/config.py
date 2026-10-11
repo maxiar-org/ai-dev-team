@@ -16,6 +16,26 @@ ENGINE_AGENT_SETTINGS: dict[str, dict[str, str]] = {
 }
 
 
+# MCP servers que reciben siempre los agentes. Viven acá y no solo en los ajustes de Canvas porque
+# esos ajustes se pueden perder (pasó el 2026-10-09). Lo configurado en Canvas se suma y pisa por nombre.
+BASE_MCP_CONFIG: dict[str, dict[str, object]] = {
+    "playwright": {
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@playwright/mcp", "--browser", "chromium",
+                 "--executable-path", "/usr/bin/chromium", "--headless", "--no-sandbox"],
+        "enabled": True,
+    },
+    # Servidor oficial de Dart y Flutter (viene con el SDK): análisis, tests, pub, árbol de widgets
+    # y errores en tiempo de ejecución de la app.
+    "dart": {
+        "transport": "stdio",
+        "command": "dart",
+        "args": ["mcp-server"],
+        "enabled": True,
+    },
+}
+
 class ConfigError(ValueError):
     """La configuración del entorno es inválida o incompleta."""
 

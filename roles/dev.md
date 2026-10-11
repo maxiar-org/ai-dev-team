@@ -16,6 +16,17 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}**
 2. Lee el issue completo y sus comentarios: `gh issue view {{number}} --repo {{org}}/{{repo}} --comments`.
 3. Si la rama `{{branch}}` ya existe en origin, continúa sobre ella (`git fetch origin && git checkout {{branch}}`). Si no existe, créala: `git checkout -b {{branch}}`.
 4. Trabaja con TDD: primero un test que falle, después el código mínimo para que pase y por último el refactor. Haz commits pequeños con mensajes en español.
+   **En proyectos Dart o Flutter, usá el MCP `dart`** (herramientas `mcp__dart__*`):
+   - Al empezar, registrá la carpeta del proyecto con la herramienta `roots` (la ruta absoluta donde está el `pubspec.yaml`).
+   - Usalo para:
+     - analizar archivos y navegar el código con LSP (definiciones y referencias);
+     - buscar paquetes en pub.dev antes de sumar una dependencia;
+     - correr `pub`.
+   - Con la app corriendo en modo debug, también para:
+     - ver los errores en tiempo de ejecución;
+     - inspeccionar el árbol de widgets;
+     - hacer hot reload.
+   - Los comandos de verificación de `AGENTS.md` se siguen corriendo igual en la terminal.
 5. Antes de abrir el PR, deben pasar los comandos de verificación que indica `AGENTS.md` (en Flutter: `flutter analyze` y `flutter test`).
 6. Sube la rama y abre el PR: `git push -u origin {{branch}}` y luego `gh pr create --repo {{org}}/{{repo}} --head {{branch}} --title "<título>" --body-file <archivo>`.
    El cuerpo del PR debe incluir:
