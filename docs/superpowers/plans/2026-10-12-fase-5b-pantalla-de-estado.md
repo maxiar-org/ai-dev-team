@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Reemplazar la página de `estado.maxiar.dev` por el tablero aprobado en Claude Design: te esperan, equipo por puesto, proyectos, despliegues y credenciales, consumo y presupuesto (7 y 30 días) y resumen.
+**Goal:** Reemplazar la página de `estado.maxiar.dev` por el tablero aprobado en Claude Design: te esperan, equipo por puesto, proyectos (con enlaces a repo, vistas de Projects y sitios), despliegues y credenciales, consumo y presupuesto (7 y 30 días, también por proyecto) y resumen.
 
 **Architecture:** Se mantiene el servicio `estado` (Python, sin framework): `Collector` → `Snapshot` → `build_view` (puro) → `render` (puro) → HTML cacheado en `Page`. Los datos nuevos salen de `state.json`, `metrics.csv`, `limits.csv` y la API de GitHub. El HTML y los gráficos pasan a `render.py` y `charts.py`; el rango va por `?rango=`, y `/api/estado` devuelve la `View` como JSON.
 
@@ -20,7 +20,9 @@
 - Todo texto que viene de GitHub, Coolify o los CSV sale escapado con `html.escape`.
 - Una fuente caída deja sin datos solo su sección ("sin datos (…)").
 - Horas para Eduardo en `ESTADO_TZ` (por defecto `America/Argentina/Buenos_Aires`).
-- Búsquedas de GitHub para presupuesto: como mucho una vez cada 600 s.
+- Búsquedas de GitHub para presupuesto y la consulta de vistas de Projects: como mucho una vez cada 600 s cada una.
+- Todo lo que tiene URL es un enlace: issues, PR, repos, vistas de Projects, apps y sitios de Coolify, previews, y las píldoras de salud con URL en `HEALTH_LINKS`.
+- El costo por proyecto suma exactamente el costo estimado del rango (fila "sin asignar" para el fijo de puestos sin trabajo).
 - Tests: `cd dispatcher && uv run --with pytest --with respx python -m pytest -q`. Hoy pasan 298.
 - Commits con `git -c user.email=eduardo.jimenez@falconsoft.cl commit`, mensaje en español, terminando en `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 
@@ -138,7 +140,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `dispatcher/tests/test_github.py`
 
 **Interfaces:**
-- Produces: `Item.updated_at: str = ""`, `Item.sub_issues: tuple[int, int] | None = None` (completados, total); `PRInfo.updated_at: str = ""` (último campo); `models.CLOSES_RE`; `search_since` devuelve además `created_at`, `merged_at`, `closes: int | None` y `labels: list[str]`.
+- Produces: `Item.updated_at: str = ""`, `Item.sub_issues: tuple[int, int] | None = None` (completados, total); `PRInfo.updated_at: str = ""` (último campo); `models.CLOSES_RE`; `search_since` devuelve además `created_at`, `merged_at`, `closes: int | None` y `labels: list[str]`; `GitHubClient.repo_projects(repos: list[str]) -> dict[str, list[dict]]` (`{"title", "url"}` de cada vista abierta).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -175,6 +177,18 @@ def test_list_open_items_reads_updated_at_and_sub_issues(gh):
     a, b = gh.list_open_items("qr")
     assert (a.updated_at, a.sub_issues) == ("2026-10-12T05:00:00Z", (4, 9))
     assert (b.updated_at, b.sub_issues) == ("", None)
+
+
+@respx.mock
+def test_repo_projects_lists_open_views_in_one_query(gh):
+    r = respx.post("https://api.github.com/graphql").respond(json={"data": {
+        "r0": {"projectsV2": {"nodes": [{"title": "NIKITO Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/3", "closed": False},
+                                        {"title": "Vieja", "url": "u", "closed": True}]}},
+        "r1": None}})
+    assert gh.repo_projects(["nikito", "qr", "mal nombre"]) == {
+        "nikito": [{"title": "NIKITO Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/3"}], "qr": []}
+    body = json.loads(r.calls.last.request.content)
+    assert body["variables"] == {"org": "maxiar-org"} and "mal nombre" not in body["query"] and r.call_count == 1
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -236,6 +250,26 @@ def _sub_issues(summary: dict | None) -> tuple[int, int] | None:
         return out
 ```
 
+Y el método de vistas de Projects (una sola consulta GraphQL con un alias por repo; los nombres que no son de repo se descartan para no inyectar texto en la consulta). Sumar `import re` arriba si falta, y la constante `REPO_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")`:
+
+```python
+    def repo_projects(self, repos: list[str]) -> dict[str, list[dict]]:
+        """Vistas de GitHub Projects vinculadas a cada repo, sin las cerradas: {repo: [{"title", "url"}]}."""
+        valid = [r for r in repos if REPO_NAME.match(r)]
+        if not valid:
+            return {}
+        fields = " ".join(f'r{i}: repository(owner: $org, name: "{r}") {{ projectsV2(first: 10) {{ nodes {{ title url closed }} }} }}'
+                          for i, r in enumerate(valid))
+        resp = self.http.post("/graphql", json={"query": f"query($org: String!) {{ {fields} }}", "variables": {"org": self.org}})
+        resp.raise_for_status()
+        data = resp.json().get("data") or {}
+        out: dict[str, list[dict]] = {}
+        for i, r in enumerate(valid):
+            nodes = ((data.get(f"r{i}") or {}).get("projectsV2") or {}).get("nodes") or []
+            out[r] = [{"title": n["title"], "url": n["url"]} for n in nodes if n and not n.get("closed")]
+        return out
+```
+
 `estado.py`, en `_collect_repo`, pasar la antigüedad a los dos `PRInfo(...)`:
 
 ```python
@@ -249,13 +283,13 @@ def _sub_issues(summary: dict | None) -> tuple[int, int] | None:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cd dispatcher && uv run --with pytest --with respx python -m pytest -q`
-Expected: PASS (300 tests).
+Expected: PASS (301 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add dispatcher/src/dispatcher/models.py dispatcher/src/dispatcher/github.py dispatcher/src/dispatcher/view.py dispatcher/src/dispatcher/estado.py dispatcher/tests/test_github.py
-git -c user.email=eduardo.jimenez@falconsoft.cl commit -m "feat(github): antigüedad, avance de épicas y fechas de PR para la vista de estado
+git -c user.email=eduardo.jimenez@falconsoft.cl commit -m "feat(github): antigüedad, épicas, fechas de PR y vistas de Projects para la vista de estado
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -275,7 +309,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `rework_per_issue(rows) -> float`;
   - `hour_strip(metrics_rows, limit_rows, slot: str, now: float, active_since: float | None = None, exhausted_until: float | None = None) -> list[str]`: 24 estados `"trabajando" | "sin_cupo" | "libre"`, el índice 0 es la hora que empieza hace 24 h;
   - `daily_hours(metrics_rows, slot_names: list[str], now: float, days: int, tz: ZoneInfo) -> list[dict]`: `[{"date": date, "minutes": {slot: float}}]`, del más viejo al de hoy;
-  - `flow_times(merged: list[dict], metrics_rows, now: float, window_s: float) -> dict[str, float | None]`: segundos, con claves `issue_to_pr`, `pr_to_merge` y `total`.
+  - `flow_times(merged: list[dict], metrics_rows, now: float, window_s: float) -> dict[str, float | None]`: segundos, con claves `issue_to_pr`, `pr_to_merge` y `total`;
+  - `project_costs(metrics_rows, slots, costs: Mapping[str, float], image_usd: float, now: float, window_s: float) -> dict[str, dict]`: `{repo: {"minutes", "images", "cost"}}`, con la clave `UNASSIGNED = "sin asignar"` para el fijo de puestos que no trabajaron en el rango.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -285,7 +320,8 @@ Agregar a `tests/test_team_report.py`:
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from dispatcher.team_report import clean_limits, clean_metrics, daily_hours, flow_times, hour_strip, rework_per_issue
+from dispatcher.team_report import (UNASSIGNED, clean_limits, clean_metrics, daily_hours, flow_times, hour_strip,
+                                    project_costs, rework_per_issue)
 
 HOUR = 3600.0
 
@@ -339,6 +375,18 @@ def test_flow_times_medians():
     assert f["pr_to_merge"] == 3.5 * HOUR                         # 5,5 h, 3,5 h y 2 h
     assert f["total"] == (8 * HOUR + 4 * HOUR) / 2
     assert flow_times([], [], NOW, DAY) == {"issue_to_pr": None, "pr_to_merge": None, "total": None}
+
+
+def test_project_costs_split_fixed_by_minutes_and_keep_unassigned():
+    costs = {"codex-senior": 300.0, "claude-senior": 60.0}
+    rows = [m("codex-senior", "dev", 1, NOW - 3600, 30, repo="nikito"), m("codex-senior", "qa", 2, NOW - 1800, 10, imgs=2, repo="qr")]
+    pc = project_costs(rows, SLOTS, costs, 0.04, NOW, DAY)
+    assert round(pc["nikito"]["cost"], 6) == round(10.0 * 30 / 40, 6) and pc["nikito"]["minutes"] == 30.0
+    assert round(pc["qr"]["cost"], 6) == round(10.0 * 10 / 40 + 0.08, 6) and pc["qr"]["images"] == 2
+    assert round(pc[UNASSIGNED]["cost"], 6) == 2.0  # claude-senior no trabajó: 60 USD al mes son 2 por día
+    total = sum(s.cost_usd for s in slot_stats(rows, [], SLOTS, costs, 0.04, NOW, DAY).values())
+    assert round(sum(p["cost"] for p in pc.values()), 6) == round(total, 6)
+    assert project_costs([], SLOTS, {}, 0.04, NOW, DAY) == {}
 
 
 def test_rework_per_issue_is_public():
@@ -473,18 +521,51 @@ def flow_times(merged: list[dict], metrics_rows, now: float, window_s: float) ->
     return {"issue_to_pr": _median(to_pr), "pr_to_merge": _median(to_merge), "total": _median(total)}
 ```
 
+Y el costo por proyecto (la suma coincide con `slot_stats`: las imágenes cuentan solo en filas de un puesto configurado, como allí):
+
+```python
+UNASSIGNED = "sin asignar"
+
+
+def project_costs(metrics_rows, slots: Iterable[Slot], costs: Mapping[str, float], image_usd: float,
+                  now: float, window_s: float) -> dict[str, dict]:
+    """Costo del rango por repo: el fijo de cada puesto se reparte según sus minutos en cada repo, más las imágenes."""
+    slots = list(slots)
+    names = {s.name for s in slots}
+    rows = [r for r in metrics_rows if _ts(r["inicio"]) >= now - window_s and r.get("puesto") in names]
+    out: dict[str, dict] = defaultdict(lambda: {"minutes": 0.0, "images": 0, "cost": 0.0})
+    for slot in slots:
+        mine = [r for r in rows if r.get("puesto") == slot.name]
+        total = sum(float(r.get("duracion_min") or 0) for r in mine)
+        fixed = costs.get(slot.name, 0.0) * (window_s / (30 * DAY))
+        if total <= 0:
+            if fixed:
+                out[UNASSIGNED]["cost"] += fixed
+            continue
+        for r in mine:
+            minutes = float(r.get("duracion_min") or 0)
+            out[r["repo"]]["minutes"] += minutes
+            out[r["repo"]]["cost"] += fixed * minutes / total
+    for r in rows:
+        images = int(r.get("imagenes_gemini") or 0)
+        if images:
+            out[r["repo"]]["images"] += images
+            out[r["repo"]]["cost"] += images * image_usd
+    return dict(out)
+```
+
 `_ts` ya existe arriba en el módulo (usa `datetime.fromisoformat`, que lee la `Z` de GitHub).
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cd dispatcher && uv run --with pytest --with respx python -m pytest -q tests/test_team_report.py`
-Expected: PASS (9 tests).
+Expected: PASS (10 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add dispatcher/src/dispatcher/team_report.py dispatcher/tests/test_team_report.py
-git -c user.email=eduardo.jimenez@falconsoft.cl commit -m "feat(consumo): franja de 24 h, horas por día y tiempos de flujo
+git -c user.email=eduardo.jimenez@falconsoft.cl commit -m "feat(consumo): franja de 24 h, horas por día, tiempos de flujo y costo por proyecto
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -498,15 +579,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `dispatcher/tests/test_view.py`
 
 **Interfaces:**
-- Consumes: tareas 1 a 3 (`Item.sub_issues`, `PRInfo.updated_at`, `Item.updated_at`, `clean_metrics`, `clean_limits`, `hour_strip`, `daily_hours`, `flow_times`, `rework_per_issue`, `slot_stats`, `decision_alerts`).
+- Consumes: tareas 1 a 3 (`Item.sub_issues`, `PRInfo.updated_at`, `Item.updated_at`, `clean_metrics`, `clean_limits`, `hour_strip`, `daily_hours`, `flow_times`, `project_costs`, `rework_per_issue`, `slot_stats`, `decision_alerts`).
 - Produces (los consume `render.py` en la tarea 6):
-  - `Snapshot` nuevos campos: `repos: tuple[str, ...] = ()`, `limits: list[dict]`, `slots: tuple[Slot, ...] = DEFAULT_SLOTS`, `slot_costs: dict[str, float]`, `slot_labels: dict[str, str]`, `exhausted: dict[str, float]`, `closed: list[dict]`, `merged: list[dict]`, `image_usd: float = 0.04`, `tz: str = "America/Argentina/Buenos_Aires"`.
-  - `View` nuevos campos: `slots: list[dict]`, `projects: list[dict]`, `credentials: list[dict]`, `budget: dict[str, dict]` (claves `"7"` y `"30"`).
+  - `Snapshot` nuevos campos: `repos: tuple[str, ...] = ()`, `limits: list[dict]`, `slots: tuple[Slot, ...] = DEFAULT_SLOTS`, `slot_costs: dict[str, float]`, `slot_labels: dict[str, str]`, `exhausted: dict[str, float]`, `closed: list[dict]`, `merged: list[dict]`, `image_usd: float = 0.04`, `tz: str = "America/Argentina/Buenos_Aires"`, `repo_projects: dict[str, list[dict]]`, `health_links: dict[str, str]`.
+  - `View` nuevos campos: `slots: list[dict]`, `projects: list[dict]`, `credentials: list[dict]`, `budget: dict[str, dict]` (claves `"7"` y `"30"`), `health_links: dict[str, str]` (clave: nombre del chequeo en minúscula).
   - `v.waiting[i]["age"]` y `v.human[i]["age"]`: segundos o `None`; `v.human[i]["kind"]`: `"pr"` o `"issue"`.
   - Cada `v.slots[i]`: `{"name", "engine", "label", "status": "trabajando"|"libre"|"sin_cupo", "status_text", "detail", "cells": [{"state", "title"}], "tasks": int, "hours": float, "exhausted": float, "footer"}`.
-  - Cada `v.projects[i]`: `{"repo", "epic": {"number", "title", "url", "done", "total"} | None, "counts": {columna: int}, "items": [filas de work]}` con `COLUMNS = ("Por hacer", "Dev", "Review", "QA", "Fix", "Te espera")`.
+  - Cada `v.projects[i]`: `{"repo", "url", "views": [{"title", "url"}], "sites": [{"name", "url", "status"}], "epic": {"number", "title", "url", "done", "total"} | None, "counts": {columna: int}, "items": [filas de work]}` con `COLUMNS = ("Por hacer", "Dev", "Review", "QA", "Fix", "Te espera")`.
   - Cada `v.credentials[i]`: `{"name", "level": "ok"|"advertencia"|"critico", "text"}`.
-  - `v.budget["7"]`: `{"days", "cost", "fixed", "images", "image_cost", "closed", "cost_per_issue", "rework", "cuts", "exhausted_hours", "daily", "exhausted", "flow", "alerts"}`; `daily` es la salida de `daily_hours`, `exhausted` es `[{"slot", "engine", "hours", "cuts"}]`.
+  - `v.budget["7"]`: `{"days", "cost", "fixed", "images", "image_cost", "closed", "cost_per_issue", "rework", "cuts", "exhausted_hours", "daily", "exhausted", "flow", "alerts", "by_project"}`; `daily` es la salida de `daily_hours`, `exhausted` es `[{"slot", "engine", "hours", "cuts"}]`, `by_project` es `[{"repo", "hours", "images", "cost", "closed", "cost_per_issue"}]` ordenado por costo de mayor a menor.
   - `zone(name: str) -> ZoneInfo` (UTC si el nombre no existe).
 
 - [ ] **Step 1: Write the failing tests**
@@ -568,7 +649,22 @@ def test_projects_group_stages_and_pick_current_epic():
     assert p["qr"]["epic"] == {"number": 11, "title": "Épica: Fase 1", "url": "https://github.com/maxiar-org/qr/issues/11", "done": 4, "total": 9}
     assert p["qr"]["counts"] == {"Por hacer": 2, "Dev": 1, "Review": 0, "QA": 1, "Fix": 0, "Te espera": 2}
     assert all(i["number"] not in (10, 11) for i in p["qr"]["items"])
-    assert p["lab"] == {"repo": "lab", "epic": None, "counts": dict.fromkeys(COLUMNS, 0), "items": []}
+    assert p["lab"] == {"repo": "lab", "url": "https://github.com/maxiar-org/lab", "views": [], "sites": [], "epic": None,
+                        "counts": dict.fromkeys(COLUMNS, 0), "items": []}
+
+
+def test_projects_carry_repo_views_and_sites():
+    app = AppInfo("qr-generator", "maxiar-org/qr", "https://qr.maxiar.dev", "running:healthy")
+    other = AppInfo("otra", "maxiar-org/otra", "https://otra.maxiar.dev", "running:healthy")
+    snap = Snapshot(now=NOW, org="maxiar-org", repos=("qr",), apps=[app, other],
+                    repo_projects={"qr": [{"title": "QR Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/2"}]},
+                    health_links={"canvas": "https://canvas.x"})
+    v = build_view(snap)
+    p = v.projects[0]
+    assert p["url"] == "https://github.com/maxiar-org/qr"
+    assert p["views"] == [{"title": "QR Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/2"}]
+    assert p["sites"] == [{"name": "qr-generator", "url": "https://qr.maxiar.dev", "status": "running:healthy"}]
+    assert v.health_links == {"canvas": "https://canvas.x"}
 
 
 def test_credentials_levels():
@@ -594,11 +690,14 @@ def test_budget_by_range():
     assert b7["rework"] == 1.0 and b7["cuts"] == 1 and b7["exhausted_hours"] == 3.0
     assert [e["slot"] for e in b7["exhausted"]] == ["claude-senior", "codex-senior", "gemini"]
     assert set(b7["flow"]) == {"issue_to_pr", "pr_to_merge", "total"}
+    assert [p["repo"] for p in b7["by_project"]] == ["qr", "sin asignar"]
+    assert round(sum(p["cost"] for p in b7["by_project"]), 6) == round(b7["cost"], 6)
+    assert b7["by_project"][0]["closed"] == 1 and b7["by_project"][0]["cost_per_issue"] == b7["by_project"][0]["cost"]
 
 
 def test_budget_without_costs_or_closed_issues():
     b = build_view(Snapshot(now=NOW)).budget["7"]
-    assert b["cost"] == 0 and b["closed"] == 0 and b["cost_per_issue"] is None
+    assert b["cost"] == 0 and b["closed"] == 0 and b["cost_per_issue"] is None and b["by_project"] == []
     assert [e["slot"] for e in b["exhausted"]] == ["claude", "codex"]
 
 
@@ -626,7 +725,7 @@ from zoneinfo import ZoneInfo
 from .config import DEFAULT_SLOTS
 from .models import CLOSES_RE, LABEL_DEV, LABEL_DOCS, LABEL_FIX, LABEL_HUMAN, LABEL_QA, LABEL_REVIEW, LABEL_WORKING, Item, Slot
 from .team_report import (DAY, clean_limits, clean_metrics, daily_hours, decision_alerts, flow_times, hour_strip,
-                          rework_per_issue, slot_stats)
+                          project_costs, rework_per_issue, slot_stats)
 ```
 
 (`config.py` importa solo `models`, así que no hay ciclo.)
@@ -652,6 +751,8 @@ RANGES = (7, 30)
     merged: list[dict] = field(default_factory=list)
     image_usd: float = 0.04
     tz: str = "America/Argentina/Buenos_Aires"
+    repo_projects: dict[str, list[dict]] = field(default_factory=dict)
+    health_links: dict[str, str] = field(default_factory=dict)
 ```
 
 `View`, campos nuevos al final:
@@ -661,6 +762,7 @@ RANGES = (7, 30)
     projects: list[dict] = field(default_factory=list)
     credentials: list[dict] = field(default_factory=list)
     budget: dict[str, dict] = field(default_factory=dict)
+    health_links: dict[str, str] = field(default_factory=dict)
 ```
 
 Funciones nuevas (antes de `build_view`):
@@ -741,6 +843,12 @@ def _budget(snap: Snapshot, rows: list, limits: list, days: int) -> dict:
     closed = [c for c in snap.closed if LABEL_EPIC not in (c.get("labels") or [])
               and (_age(now, c.get("closed_at")) or window + 1) <= window]
     cost = sum(s.cost_usd for s in stats.values())
+    by_project = []
+    for repo, pc in sorted(project_costs(rows, snap.slots, snap.slot_costs, snap.image_usd, now, window).items(),
+                           key=lambda kv: -kv[1]["cost"]):
+        n = sum(1 for c in closed if c.get("repo") == repo)
+        by_project.append({"repo": repo, "hours": round(pc["minutes"] / 60, 2), "images": pc["images"], "cost": pc["cost"],
+                           "closed": n, "cost_per_issue": pc["cost"] / n if n else None})
     return {
         "days": days,
         "cost": cost,
@@ -757,6 +865,7 @@ def _budget(snap: Snapshot, rows: list, limits: list, days: int) -> dict:
                        "cuts": stats[s.name].limit_hits} for s in snap.slots],
         "flow": flow_times(snap.merged, rows, now, window),
         "alerts": decision_alerts(limits, rows, snap.slots, now),
+        "by_project": by_project,
     }
 ```
 
@@ -801,10 +910,15 @@ En `build_view`:
         counts = dict.fromkeys(COLUMNS, 0)
         for w in items:
             counts[w["column"]] += 1
-        v.projects.append({"repo": repo, "epic": epic, "counts": counts, "items": items})
+        sites = [{"name": a.name, "url": a.url, "status": a.status} for a in snap.apps
+                 if a.repo in (f"{snap.org}/{repo}", repo) and a.url]
+        v.projects.append({"repo": repo, "url": f"https://github.com/{snap.org}/{repo}",
+                           "views": list(snap.repo_projects.get(repo, [])), "sites": sites,
+                           "epic": epic, "counts": counts, "items": items})
     rows, limits = clean_metrics(snap.metrics), clean_limits(snap.limits)
     v.slots = _slot_cards(snap, rows, limits)
     v.budget = {str(d): _budget(snap, rows, limits, d) for d in RANGES}
+    v.health_links = dict(snap.health_links)
 ```
 
 La variable `today` ya existe más arriba en `build_view` (se usa para `tokens`); dejar el bloque de credenciales después de ella.
@@ -1027,7 +1141,9 @@ def full_view():
                     human_notes={"qr#8": "¿Qué medida?"}, exhausted={"gemini": NOW + 3600},
                     checks=[Check("Canvas", True, "ok"), Check("Dispatcher", False, "sin latido")],
                     apps=[AppInfo("qr-generator", "maxiar-org/qr", "https://qr.maxiar.dev", "running:healthy")],
-                    expiries={"GITHUB_TOKEN": date(2026, 10, 30)}, ops=[(3, "[ops] canvas", "https://x/3")], tz="UTC")
+                    expiries={"GITHUB_TOKEN": date(2026, 10, 30)}, ops=[(3, "[ops] canvas", "https://x/3")], tz="UTC",
+                    slot_costs={"claude-senior": 100.0}, health_links={"canvas": "https://canvas.maxiar.dev"},
+                    repo_projects={"qr": [{"title": "QR Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/2"}]})
     return build_view(snap)
 
 
@@ -1059,6 +1175,15 @@ def test_render_team_cards_and_waiting():
     assert "Sin cupo hasta" in html and "var(--c-gemini)" in html and "claude-senior" in html
     assert "Decidir" in html and "¿Qué medida?" in html and "Revisar y mergear" in html and "hace 5 d" in html
     assert "[ops] canvas" in html and "vence en" in html
+
+
+def test_render_links_everything_and_jumps_to_summary():
+    html = render(full_view())
+    for href in ("https://github.com/maxiar-org/qr", "https://github.com/orgs/maxiar-org/projects/2", "https://qr.maxiar.dev",
+                 "https://canvas.maxiar.dev", "#resumen"):
+        assert f'href="{href}"' in html
+    assert 'id="resumen"' in html and "Ir al resumen" in html
+    assert "Costo por proyecto" in html and "sin asignar" in html
 
 
 def test_empty_view_says_nothing_pending():
@@ -1103,7 +1228,7 @@ def render_summary(summary: dict | None, error: str | None, now: float) -> str:
     last = (summary or {}).get("last")
     when = (f'<span class="muted">Generado {_fmt(last.get("generated_at"))} · cubre desde {_fmt(last.get("since"))}</span>'
             if last else "")
-    out = [f'<section class="card" aria-labelledby="h-resumen"><div class="sec-head"><h2 id="h-resumen">Resumen</h2>{when}</div>',
+    out = [f'<section class="card" id="resumen" aria-labelledby="h-resumen"><div class="sec-head"><h2 id="h-resumen">Resumen</h2>{when}</div>',
            NOTICE_MARK]
     if error:
         out.append(f'<p class="bad">sin datos ({escape(error)})</p>')
@@ -1244,6 +1369,9 @@ figure{margin:0;display:flex;flex-direction:column;gap:12px;min-width:0}figcapti
 .kv b{font-variant-numeric:tabular-nums}
 .alert{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:10px;background:var(--chip);font-size:13px;line-height:1.45}
 .prose{max-width:72ch;font-size:15px;line-height:1.6}.prose h3{margin:12px 0 4px}
+a.pill{text-decoration:none}a.pill:hover{border-color:var(--ink2)}
+.links{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;margin-top:4px}.links a{display:inline-flex;align-items:center;gap:4px}
+html{scroll-behavior:smooth}#resumen{scroll-margin-top:16px}
 footer{font-size:12px;color:var(--muted)}
 """
 
@@ -1291,14 +1419,23 @@ def _usd(x: float) -> str:
     return f"USD {x:.0f}" if x >= 10 else "USD " + f"{x:.2f}".replace(".", ",")
 
 
+CHECK_NAMES = {"canvas": "Canvas", "dispatcher": "Dispatcher", "tunel": "Túnel", "coolify": "Coolify"}
+
+
 def _header(view: View) -> str:
-    pills = "".join(f'<span class="pill" title="{escape(c.detail, quote=True)}">{ICONS["ok" if c.ok else "critical"]}'
-                    f'{escape(c.name)}</span>' for c in view.health)
+    pills = []
+    for c in view.health:
+        inner = f'{ICONS["ok" if c.ok else "critical"]}{escape(CHECK_NAMES.get(c.name, c.name))}'
+        title = escape(c.detail, quote=True)
+        link = view.health_links.get(c.name.lower())
+        pills.append(f'<a class="pill" href="{escape(link, quote=True)}" title="{title}">{inner}</a>' if link
+                     else f'<span class="pill" title="{title}">{inner}</span>')
     running = (view.summary or {}).get("status") == "running"
     button = "" if running else '<form method="post" action="/resumen"><button type="submit" class="btn">Pedir resumen</button></form>'
     return (f'<header class="top"><div><div class="eyebrow">maxiar-org · AI Dev Team</div><h1>Estado del equipo</h1>'
             f'<div class="muted">Actualizado hace {AGE_MARK} s · se refresca cada 60 s</div></div>'
-            f'<div class="pills">{pills}{button}</div></header>' + _err(view, "salud"))
+            f'<div class="pills">{"".join(pills)}<a class="btn-line" href="#resumen">Ir al resumen</a>{button}</div></header>'
+            + _err(view, "salud"))
 
 
 def _waiting(view: View) -> str:
@@ -1374,10 +1511,14 @@ def _projects(view: View) -> str:
             n = p["counts"][c]
             cls = "zero" if n == 0 else ("n hot" if c == "Te espera" else "n")
             cells.append(f'<td class="{cls}">{n if n else "·"}</td>')
-        body.append(f'<tr><th scope="row" class="l"><div class="mono" style="font-size:14px">{escape(p["repo"])}</div>'
-                    f'{epic}{details}</th>{"".join(cells)}</tr>')
+        links = [_a(x["url"], x["title"]) for x in p["views"]]
+        links += [f'{ICONS["ok" if _app_status(x["status"])[0] == "ok" else "critical"]}'
+                  f'{_a(x["url"], x["url"].removeprefix("https://"))}' for x in p["sites"]]
+        links_html = f'<div class="links">{"".join(f"<span>{x}</span>" for x in links)}</div>' if links else ""
+        body.append(f'<tr><th scope="row" class="l"><div class="mono" style="font-size:14px">{_a(p["url"], p["repo"])}</div>'
+                    f'{links_html}{epic}{details}</th>{"".join(cells)}</tr>')
     return (f'<section class="card wide" aria-labelledby="h-proyectos"><div class="sec-head"><h2 id="h-proyectos">Proyectos</h2>'
-            f'<span class="muted">Issues y PR abiertos por etapa</span></div>{_err(view, "github")}<div class="scroll">'
+            f'<span class="muted">Issues y PR abiertos por etapa</span></div>{_err(view, "github", "vistas")}<div class="scroll">'
             f'<table style="min-width:600px"><thead><tr><th scope="col" class="l">Proyecto y épica</th>{head}</tr></thead>'
             f'<tbody>{"".join(body)}</tbody></table></div></section>')
 
@@ -1433,13 +1574,22 @@ def _budget(view: View, rango: str) -> str:
     alerts = "".join(f'<div class="alert">{ICONS["warn"]}<div>{escape(a)}</div></div>' for a in b["alerts"]) \
         or '<p class="muted">Nada para decidir.</p>'
     aria = f'Barras apiladas de horas de trabajo por día en los últimos {b["days"]} días, por puesto. La tabla tiene los valores.'
+    proj_rows = "".join(
+        f'<tr><th scope="row" class="l mono">{escape(p["repo"])}</th><td>{fmt_hours(p["hours"])}</td><td>{p["images"]}</td>'
+        f'<td><b>{_usd(p["cost"])}</b></td><td>{p["closed"]}</td>'
+        f'<td>{_usd(p["cost_per_issue"]) if p["cost_per_issue"] is not None else "—"}</td></tr>' for p in b["by_project"])
+    by_project = (f'<div style="display:flex;flex-direction:column;gap:10px"><h3>Costo por proyecto</h3><span class="muted">El fijo de '
+                  f'cada puesto se reparte según los minutos que trabajó en cada proyecto; el de un puesto sin trabajo queda sin asignar.'
+                  f'</span><div class="scroll"><table style="min-width:520px"><thead><tr><th scope="col" class="l">Proyecto</th>'
+                  f'<th scope="col">Horas</th><th scope="col">Imágenes</th><th scope="col">Costo</th><th scope="col">Issues cerrados</th>'
+                  f'<th scope="col">Costo por issue</th></tr></thead><tbody>{proj_rows}</tbody></table></div></div>') if b["by_project"] else 
     return (f'<section class="card" aria-labelledby="h-consumo">{head}{errors}<div class="tiles">{tiles_html}</div>'
             f'<div class="charts"><figure class="wide"><div class="sec-head"><figcaption>Horas de trabajo por día y puesto</figcaption>'
             f'<div class="legend">{legend}</div></div><div role="img" aria-label="{escape(aria, quote=True)}">'
             f'{stacked_bars(b["daily"], slots)}</div>{table}</figure>'
             f'<div class="narrow"><figure><figcaption>Horas sin cupo por puesto</figcaption>{hb}</figure>'
             f'<div style="display:flex;flex-direction:column;gap:10px"><h3>Tiempos de flujo <span class="muted">· mediana</span></h3>{flow}</div></div></div>'
-            f'<div style="display:flex;flex-direction:column;gap:10px"><h3>Para decidir</h3>{alerts}</div></section>')
+            f'{by_project}<div style="display:flex;flex-direction:column;gap:10px"><h3>Para decidir</h3>{alerts}</div></section>')
 
 
 def render(view: View, rango: str = "7") -> str:
@@ -1490,7 +1640,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `render_all` (tarea 6), los campos nuevos de `Snapshot` (tarea 4), `parse_slots`, `parse_slot_costs` y `parse_slot_labels` (tarea 1), `LimitLog` (`metrics.py`).
 - Produces:
-  - `Collector(..., limits_path=None, slots=DEFAULT_SLOTS, slot_costs=None, slot_labels=None, image_usd=0.04, tz="America/Argentina/Buenos_Aires", search_every=600)`;
+  - `Collector(..., limits_path=None, slots=DEFAULT_SLOTS, slot_costs=None, slot_labels=None, image_usd=0.04, tz="America/Argentina/Buenos_Aires", search_every=600, health_links=None)`;
+  - `parse_health_links(raw: str) -> dict[str, str]` (`"canvas=https://…,coolify=https://…"`, claves en minúscula, solo URL `https://`);
+  - `POST /resumen` redirige a `/#resumen` (y los errores a `/?error=…#resumen`);
   - `Page.update(html: str | dict[str, str], generated_at, view=None)`, `Page.body(now, notice=None, rango="7")`, `Page.api() -> tuple[int, bytes]`;
   - `GET /api/estado`.
 
@@ -1518,6 +1670,9 @@ class SearchGH(GH):
             return [{"repo": "qr", "number": 9, "created_at": "2026-10-12T01:00:00Z", "merged_at": "2026-10-12T03:00:00Z", "closes": 1}]
         return [{"repo": "qr", "number": 1, "closed_at": "2026-10-12T03:00:00Z", "labels": []}]
 
+    def repo_projects(self, repos):
+        return {"qr": [{"title": "QR Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/2"}]}
+
 
 def collector(tmp_path, gh, **kw):
     return Collector(gh, None, repos=("qr",), org="maxiar-org", bot_login="bot", ops_repo="ai-dev-team",
@@ -1530,7 +1685,9 @@ def test_collector_reads_exhaustion_limits_and_slots(tmp_path):
     LimitLog(tmp_path / "limits.csv").append("gemini", "gemini", 900.0, 1234.5, "qr#1", "429")
     slots = (Slot("gemini", "gemini", "senior"),)
     snap = collector(tmp_path, SearchGH(), slots=slots, slot_costs={"gemini": 20.0}, slot_labels={"gemini": "Gemini Pro"},
-                     tz="UTC").collect(now=1000.0)
+                     tz="UTC", health_links={"canvas": "https://canvas.x"}).collect(now=1000.0)
+    assert snap.repo_projects == {"qr": [{"title": "QR Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/2"}]}
+    assert snap.health_links == {"canvas": "https://canvas.x"}
     assert snap.exhausted == {"gemini": 1234.5} and len(snap.limits) == 1 and snap.repos == ("qr",)
     assert (snap.slots, snap.slot_costs, snap.slot_labels, snap.tz) == (slots, {"gemini": 20.0}, {"gemini": "Gemini Pro"}, "UTC")
     assert [m["number"] for m in snap.merged] == [9] and [c["number"] for c in snap.closed] == [1]
@@ -1553,6 +1710,20 @@ def test_period_cache_survives_search_error(tmp_path):
     gh.fail = True
     snap = c.collect(now=2000.0)
     assert "consumo" in snap.errors and [m["number"] for m in snap.merged] == [9]
+
+
+def test_parse_health_links():
+    from dispatcher.estado import parse_health_links
+    assert parse_health_links(" Canvas=https://canvas.x , coolify=https://c.x,mal=http://y,sinigual") == {
+        "canvas": "https://canvas.x", "coolify": "https://c.x"}
+    assert parse_health_links("") == {}
+
+
+def test_post_redirects_to_summary_anchor():
+    r, page = FakeResumen(), page_with_view()
+    assert handle_post(page, PeriodCollector(), r, ORIGIN, ORIGIN, 1000.0) == (303, "/#resumen")
+    code, loc = handle_post(page_with_view(), PeriodCollector(), FakeResumen(fail=True), ORIGIN, ORIGIN, 1000.0)
+    assert loc.startswith("/?error=") and loc.endswith("#resumen")
 
 
 def test_unknown_rango_falls_back_to_7():
@@ -1598,7 +1769,7 @@ from .render import render_all
     def __init__(self, github, coolify, repos, org, bot_login, ops_repo, state_path: Path, metrics_path: Path,
                  checker: Callable[[], list], expiries: dict, resumen=None, limits_path: Path | None = None,
                  slots=DEFAULT_SLOTS, slot_costs=None, slot_labels=None, image_usd: float = 0.04,
-                 tz: str = "America/Argentina/Buenos_Aires", search_every: float = 600):
+                 tz: str = "America/Argentina/Buenos_Aires", search_every: float = 600, health_links=None):
         self.github, self.coolify, self.repos, self.org = github, coolify, repos, org
         self.bot_login, self.ops_repo = bot_login, ops_repo
         self.state_path, self.metrics_path, self.checker, self.expiries = state_path, metrics_path, checker, expiries
@@ -1606,14 +1777,17 @@ from .render import render_all
         self.limits_path, self.slots, self.image_usd, self.tz = limits_path, tuple(slots), image_usd, tz
         self.slot_costs, self.slot_labels = dict(slot_costs or {}), dict(slot_labels or {})
         self.search_every = search_every
+        self.health_links = dict(health_links or {})
         self._period: tuple[float, list, list] | None = None  # (cuándo, cerrados, mergeados): búsquedas de GitHub cacheadas
+        self._views: tuple[float, dict] | None = None  # (cuándo, vistas de Projects por repo)
 ```
 
 En `collect`, el `Snapshot` se crea con los datos de configuración:
 
 ```python
         snap = Snapshot(now=now, org=self.org, expiries=self.expiries, repos=tuple(self.repos), slots=self.slots,
-                        slot_costs=self.slot_costs, slot_labels=self.slot_labels, image_usd=self.image_usd, tz=self.tz)
+                        slot_costs=self.slot_costs, slot_labels=self.slot_labels, image_usd=self.image_usd, tz=self.tz,
+                        health_links=self.health_links)
 ```
 
 La sección `dispatcher` lee también el agotamiento:
@@ -1626,7 +1800,7 @@ La sección `dispatcher` lee también el agotamiento:
                 snap.exhausted = {k: float(v) for k, v in data.get("slot_exhausted_until", {}).items()}
 ```
 
-Sección nueva, registrada después de `salud` con `section("consumo", consumo)`:
+Secciones nuevas (se registran más abajo):
 
 ```python
         def consumo() -> None:
@@ -1641,7 +1815,32 @@ Sección nueva, registrada después de `salud` con `section("consumo", consumo)`
             finally:
                 if self._period is not None:  # si GitHub falla, se muestran los datos de la última búsqueda buena
                     snap.closed, snap.merged = self._period[1], self._period[2]
+
+        def vistas() -> None:
+            try:
+                if self._views is None or now - self._views[0] >= self.search_every:
+                    self._views = (now, self.github.repo_projects(list(self.repos)))
+            finally:
+                if self._views is not None:
+                    snap.repo_projects = self._views[1]
 ```
+
+Registrar las dos, en este orden y después de `salud`: `section("consumo", consumo)` y `section("vistas", vistas)`.
+
+Función de módulo para los enlaces de las píldoras:
+
+```python
+def parse_health_links(raw: str) -> dict[str, str]:
+    """HEALTH_LINKS="canvas=https://…,coolify=https://…": a dónde lleva cada píldora de salud."""
+    links = {}
+    for part in raw.split(","):
+        name, sep, url = part.partition("=")
+        if sep and url.strip().startswith("https://"):
+            links[name.strip().lower()] = url.strip()
+    return links
+```
+
+`handle_post`: el éxito devuelve `return 303, "/#resumen"`, y las dos ramas de error agregan `+ "#resumen"` al final de su `Location`. En `tests/test_estado.py`, los dos `== (303, "/")` pasan a `== (303, "/#resumen")`.
 
 `Page`:
 
@@ -1709,6 +1908,7 @@ class Page:
         slots=slots, slot_costs=parse_slot_costs(env, slots), slot_labels=parse_slot_labels(env, slots),
         image_usd=float(env.get("GEMINI_IMAGE_USD", "").strip() or 0.04),
         tz=env.get("ESTADO_TZ", "").strip() or "America/Argentina/Buenos_Aires",
+        health_links=parse_health_links(env.get("HEALTH_LINKS", "")),
     )
 ```
 
@@ -1721,7 +1921,7 @@ Expected: PASS. Si `test_notice_is_escaped_and_shown_once` buscaba el emoji del 
 
 ```bash
 git add dispatcher/src/dispatcher/estado.py dispatcher/tests/test_estado.py
-git -c user.email=eduardo.jimenez@falconsoft.cl commit -m "feat(estado): agotamiento, cortes, búsquedas cacheadas, rango por URL y /api/estado
+git -c user.email=eduardo.jimenez@falconsoft.cl commit -m "feat(estado): agotamiento, cortes, búsquedas y vistas cacheadas, enlaces de salud, rango por URL y /api/estado
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
@@ -1754,6 +1954,7 @@ En `docker-compose.yml`, servicio `estado`, `environment`, debajo de `METRICS_PA
       SLOT_LABEL_GEMINI: ${SLOT_LABEL_GEMINI:-}
       GEMINI_IMAGE_USD: ${GEMINI_IMAGE_USD:-0.04}
       ESTADO_TZ: ${ESTADO_TZ:-America/Argentina/Buenos_Aires}  # zona en la que la pantalla muestra las horas
+      HEALTH_LINKS: ${HEALTH_LINKS:-}  # canvas=https://…,coolify=https://…: las píldoras de salud abren cada herramienta
 ```
 
 Verificar: `docker compose config -q && echo ok` desde la raíz del repo (con un `.env` de prueba si hace falta: `REPOS=x GITHUB_TOKEN=x CANVAS_API_KEY=x docker compose config -q`).
@@ -1820,6 +2021,8 @@ def main(out: Path) -> None:
         active={"nikito#5": {"role": "dev", "engine": "claude", "slot": "claude-senior", "started_at": NOW - 120}},
         exhausted={"gemini": NOW + 2 * 3600},
         human_notes={"nikito#23": "Pidió ayuda: QA sigue fallando después de 3 rondas de fix."},
+        repo_projects={"nikito": [{"title": "NIKITO Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/3"}]},
+        health_links={"canvas": "https://canvas.example", "coolify": "https://coolify.example"},
         checks=[Check("Canvas", True, "ok"), Check("Dispatcher", True, "latido hace 20 s"), Check("Túnel", True, "ok"),
                 Check("Coolify", True, "ok")],
         apps=[AppInfo("nikito-web", "maxiar-org/nikito", "https://nikito.maxiar.dev", "running:healthy", "2026-10-12 04:00", "finished")],
@@ -1860,7 +2063,9 @@ En `README.md`, en la sección de la vista de estado (buscar `estado.maxiar.dev`
 ```markdown
 **Pantalla (fase 5b):** te esperan, equipo por puesto (estado, franja de 24 h, consumo), proyectos por etapa con la épica en curso, despliegues y credenciales, consumo y presupuesto (`?rango=7` o `?rango=30`) y el resumen del operador. `GET /api/estado` devuelve los mismos datos en JSON (detrás de Access).
 
-Variables del servicio `estado`, además de las de siempre: `SLOTS`, `SLOT_COST_<PUESTO>`, `SLOT_LABEL_<PUESTO>` (la línea de plan bajo el nombre del puesto), `GEMINI_IMAGE_USD`, `LIMITS_PATH` y `ESTADO_TZ` (zona de las horas que se muestran, por defecto `America/Argentina/Buenos_Aires`).
+Variables del servicio `estado`, además de las de siempre: `SLOTS`, `SLOT_COST_<PUESTO>`, `SLOT_LABEL_<PUESTO>` (la línea de plan bajo el nombre del puesto), `GEMINI_IMAGE_USD`, `LIMITS_PATH`, `ESTADO_TZ` (zona de las horas que se muestran, por defecto `America/Argentina/Buenos_Aires`) y `HEALTH_LINKS` (`canvas=https://…,coolify=https://…`: a dónde llevan las píldoras de salud).
+
+Costo por proyecto: el fijo de cada puesto se reparte según los minutos que trabajó en cada proyecto en el rango, más las imágenes de sus tareas; el fijo de un puesto sin trabajo queda en "sin asignar".
 
 Para revisar el diseño sin la mini-PC: `cd dispatcher && uv run python ../scripts/estado-demo.py /tmp/estado` y abrir los HTML.
 ```
@@ -1886,7 +2091,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 No es código: se hace cuando Eduardo mergea el PR.
 
 - [ ] **Step 1:** `ssh ubuntu-labs 'cd /opt/ai-dev-team && sudo -u aidev git pull'`.
-- [ ] **Step 2:** sumar al `.env` de la mini-PC, con backup previo, `SLOT_LABEL_CLAUDE_SENIOR`, `SLOT_LABEL_CODEX_SENIOR` y `SLOT_LABEL_GEMINI` (texto que elija Eduardo).
+- [ ] **Step 2:** sumar al `.env` de la mini-PC, con backup previo, `SLOT_LABEL_CLAUDE_SENIOR`, `SLOT_LABEL_CODEX_SENIOR` y `SLOT_LABEL_GEMINI` (texto que elija Eduardo) y `HEALTH_LINKS` con las URL de Canvas y Coolify que pase Eduardo.
 - [ ] **Step 3:** sin tareas activas (`state.json` → `active` vacío), `docker compose build dispatcher && docker compose up -d dispatcher estado`.
 - [ ] **Step 4:** `curl -s localhost` no aplica (estado no publica puertos): verificar con `docker compose exec estado python -c "import urllib.request,socket; h=socket.gethostbyname('estado-publico'); print(urllib.request.urlopen(f'http://{h}:8090/api/estado').status)"`. Expected: `200`.
-- [ ] **Step 5:** Eduardo recorre `https://estado.maxiar.dev` en la compu y el celular. Entrada en `docs/bitacora.md`.
+- [ ] **Step 5:** Eduardo recorre `https://estado.maxiar.dev` en la compu y el celular: enlaces de repos, vistas, sitios y píldoras, y "Pedir resumen" que vuelve posicionado en el resumen. Entrada en `docs/bitacora.md`.

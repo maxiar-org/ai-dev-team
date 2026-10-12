@@ -64,8 +64,9 @@ El orden es por urgencia y es el del diseño. Cada sección muestra su propio av
 ### 3.1 Encabezado
 
 - Título "Estado del equipo" y "Actualizado hace N s · se refresca cada 60 s".
-- Píldoras de salud, una por chequeo de `run_checks` (Canvas, dispatcher, túnel, Coolify), con ícono y texto. Una falla muestra su detalle en el `title`.
-- Botón "Pedir resumen": el mismo `POST /resumen` de hoy.
+- Píldoras de salud, una por chequeo de `run_checks` (Canvas, dispatcher, túnel, Coolify), con ícono y texto. Una falla muestra su detalle en el `title`. Cada píldora con URL configurada en `HEALTH_LINKS` (`canvas=https://…,coolify=https://…`) es un enlace que abre esa herramienta.
+- Botón "Pedir resumen": el mismo `POST /resumen` de hoy, que ahora redirige a `/#resumen`, así la página vuelve posicionada donde va a aparecer la respuesta.
+- Enlace "Ir al resumen" (`#resumen`), al lado del botón, para llegar sin scroll.
 
 ### 3.2 Te esperan
 
@@ -110,13 +111,17 @@ Las etapas salen de `_stage`, agrupadas así:
 | Fix | `fix (en cola)` o tarea activa de fix |
 | Te espera | `necesita a Eduardo` y `espera a Eduardo` |
 
-Debajo del nombre del repo va la épica en curso: el issue abierto con etiqueta `epic` y número más bajo que tenga sub-issues, con la barra de avance de `sub_issues_summary` (`completed` de `total`). Esos datos ya vienen en el listado de issues; no hacen falta llamadas nuevas.
+El nombre del repo es un enlace al repo en GitHub. Debajo van, si existen:
+- **Vistas del proyecto:** los GitHub Projects vinculados al repo (por ejemplo "NIKITO Roadmap"), con un enlace cada uno. Salen de una consulta GraphQL (`repository.projectsV2`) para todos los repos a la vez, cacheada 10 minutos como las búsquedas.
+- **Sitios:** las URL de producción de las apps de Coolify de ese repo (por ejemplo `qr.maxiar.dev`), con su estado.
+
+Después va la épica en curso: el issue abierto con etiqueta `epic` y número más bajo que tenga sub-issues, con la barra de avance de `sub_issues_summary` (`completed` de `total`). Esos datos ya vienen en el listado de issues; no hacen falta llamadas nuevas.
 
 Cada fila tiene un `<details>` "Ver issues" con la lista actual (número, título y etapa), para no perder el detalle que hoy muestra "Trabajo en curso". La tabla vive en una caja con `overflow-x: auto`.
 
 ### 3.5 Despliegues y credenciales
 
-- **Apps de Coolify y previews de PR abiertos:** lo mismo de hoy, como filas con ícono de estado.
+- **Apps de Coolify y previews de PR abiertos:** lo mismo de hoy, como filas con ícono de estado. El nombre de cada app es un enlace a su URL de producción, y cada preview a su URL.
 - **Credenciales:** todos los vencimientos configurados, no solo los próximos a vencer.
   - Más de 30 días: ok.
   - Entre 7 y 30 días: advertencia.
@@ -137,13 +142,18 @@ Toda la sección usa el rango elegido (7 o 30 días).
   - *Issue a PR:* del `inicio` del primer dev del issue en `metrics.csv` al `fin` del dev que terminó con `pr_abierto`;
   - *PR a merge:* `created_at` a `merged_at` del PR. Incluye la review de Eduardo y así se aclara en la etiqueta;
   - *Total:* del primer dev al merge.
+- **Costo por proyecto:** una tabla con proyecto, horas de trabajo, imágenes, costo, issues cerrados y costo por issue, ordenada por costo. Hoy los costos son del equipo entero; la tabla deja listo verlos por proyecto cuando haya varios grandes en paralelo:
+  - el fijo de cada puesto se reparte entre los proyectos según los minutos que ese puesto trabajó en cada uno durante el rango;
+  - las imágenes se cargan al proyecto de la tarea que las generó;
+  - el fijo de un puesto que no trabajó en el rango queda en una fila "sin asignar", así la suma de la tabla coincide con el costo estimado;
+  - la función que lo calcula (`project_costs`) es pura y recibe el rango, así una vista por proyecto futura (`?proyecto=`) la reutiliza.
 - **Para decidir:** las frases de `decision_alerts`, con ícono de advertencia. Sin alertas, "Nada para decidir".
 
 Los datos de GitHub de esta sección (issues cerrados y PR mergeados, de `search_since`) se piden como mucho cada 10 minutos, para no gastar la cuota de búsqueda. Los CSV se leen en cada recolección.
 
 ### 3.7 Resumen
 
-El resumen del operador de hoy (`render_summary`) con el estilo nuevo: texto, hora de generación, aviso si está generando y el botón.
+El resumen del operador de hoy (`render_summary`) con el estilo nuevo: texto, hora de generación, aviso si está generando y el botón. La sección tiene `id="resumen"`, el destino del botón del encabezado y del enlace "Ir al resumen".
 
 ## 4. Diseño visual
 
@@ -170,14 +180,14 @@ El resumen del operador de hoy (`render_summary`) con el estilo nuevo: texto, ho
 | Componente | Cambio |
 |---|---|
 | `models.py` | `Item.updated_at: str = ""`; `Item.sub_issues: tuple[int, int] \| None` (completados, total) |
-| `github.py` | `list_open_items` llena `updated_at` y `sub_issues`; `search_since` suma `created_at` y, para PR, `merged_at` (`pull_request.merged_at`) |
-| `team_report.py` | Nuevas funciones puras: `hour_strip`, `daily_hours`, `flow_times` |
+| `github.py` | `list_open_items` llena `updated_at` y `sub_issues`; `search_since` suma `created_at` y, para PR, `merged_at` (`pull_request.merged_at`); `repo_projects(repos)` trae las vistas de GitHub Projects de cada repo (GraphQL) |
+| `team_report.py` | Nuevas funciones puras: `hour_strip`, `daily_hours`, `flow_times`, `project_costs` |
 | `view.py` | `Snapshot` suma `limits`, `slots`, `slot_costs`, `slot_labels`, `exhausted`, `closed`, `merged` y `tz`. `View` suma `slots`, `projects`, `credentials` y `budget` por rango. `build_view` las arma; `render` sale de este archivo |
 | `render.py` (nuevo) | HTML completo, CSS con tokens, íconos |
 | `charts.py` (nuevo) | Barras apiladas, barras horizontales y franja de 24 h, como HTML |
-| `estado.py` | `Collector` lee `limits.csv`, `slot_exhausted_until` y la configuración de puestos, y cachea las búsquedas 10 min; `GET /?rango=`, `GET /api/estado` |
+| `estado.py` | `Collector` lee `limits.csv`, `slot_exhausted_until` y la configuración de puestos, y cachea las búsquedas y las vistas de proyecto 10 min; `GET /?rango=`, `GET /api/estado`; `POST /resumen` redirige a `/#resumen` |
 | `config.py` | Una función compartida para leer `SLOTS` y `SLOT_COST_*`, que usan el dispatcher y `estado` |
-| `docker-compose.yml` | `estado` recibe `SLOTS`, `SLOT_COST_*`, `SLOT_LABEL_*`, `GEMINI_IMAGE_USD`, `LIMITS_PATH`, `ESTADO_TZ` |
+| `docker-compose.yml` | `estado` recibe `SLOTS`, `SLOT_COST_*`, `SLOT_LABEL_*`, `GEMINI_IMAGE_USD`, `LIMITS_PATH`, `ESTADO_TZ`, `HEALTH_LINKS` |
 | `scripts/estado-demo.py` (nuevo) | Renderiza la página con un `Snapshot` de ejemplo a un HTML local, para revisarla contra el diseño sin la mini-PC |
 | `README.md` | La sección de la vista de estado, con las variables nuevas |
 
@@ -188,7 +198,8 @@ El resumen del operador de hoy (`render_summary`) con el estilo nuevo: texto, ho
   - `daily_hours`: días sin datos, filas incompletas, rango de 7 y 30 días;
   - `flow_times`: issues sin dev registrado, PR sin issue y medianas con números pares;
   - el estado de cada puesto (trabajando, libre o sin cupo, y el agotamiento ya vencido);
-  - el agrupamiento de etapas de 3.4 y la épica elegida;
+  - el agrupamiento de etapas de 3.4, la épica elegida, y los enlaces de repo, vistas y sitios;
+  - `project_costs`: el reparto por minutos, las imágenes, la fila "sin asignar" y que la suma coincida con el costo total;
   - los niveles de credenciales.
 - **Render:**
   - cada sección aparece con datos y con su aviso de error;
@@ -202,7 +213,7 @@ El resumen del operador de hoy (`render_summary`) con el estilo nuevo: texto, ho
 ## 7. Despliegue
 
 1. Merge y `git pull` en `/opt/ai-dev-team`.
-2. Variables nuevas en `.env`, si hacen falta (`SLOT_LABEL_*`; `ESTADO_TZ` tiene valor por defecto).
+2. Variables nuevas en `.env`, si hacen falta (`SLOT_LABEL_*` y `HEALTH_LINKS` con las URL de Canvas y Coolify que pase Eduardo; `ESTADO_TZ` tiene valor por defecto).
 3. Reconstruir y levantar solo `estado`. El dispatcher no cambia de comportamiento, aunque comparte imagen: se reconstruye cuando no haya tareas activas.
 4. Recorrer la página en la compu y el celular.
 5. Bitácora.
