@@ -188,3 +188,18 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
   - los logs de httpx en nivel INFO llenan los logs (unas 20 líneas por minuto).
 - **Dispatcher, PR mergeado durante una tarea:** si Eduardo mergea un PR mientras corre el fix, la tarea sigue y al terminar le pone `agent:review` a un PR ya cerrado. Pasó con nikito#15 y se resolvió a mano: se reabrió el issue y se abrió el PR #16 desde la misma rama. Conviene detectar el merge y avisar, o abrir el PR de seguimiento solo.
 - **Mejoras menores diferidas** de las revisiones de código (ver ledgers y bitácoras de cada fase).
+
+## Fase 5a: equipo por puestos (2026-10-12)
+
+- **Desplegada** (PR #24): el dispatcher corre una tarea por puesto, asigna por rol y `size:*`/`kind:architecture`/`needs:images`, prioriza terminar antes de empezar, y una tarea cortada por límite de uso vuelve a la fila sola.
+- **Puestos activos:** `claude-senior` (Max 5x, `CLAUDE_CODE_OAUTH_TOKEN` de `claude setup-token`), `codex-senior` (servicios@falconsoft.cl; hoy Plus, pasa a Pro) y `gemini` (Gemini Pro, login con Google).
+- **Prueba de Gemini CLI (tarea 1 del plan):**
+  - **Lo que funcionó:** Canvas ya trae Gemini CLI 0.46.0 y lo reconoce como `acp_server: "gemini-cli"`. Una conversación de prueba en nikito leyó `AGENTS.md`, vio los MCP `playwright`, `dart` e `image` y corrió Flutter.
+  - **Lección 1, hostname fijo (PR #26):** Gemini CLI cifra su login con una clave derivada de `os.hostname()`. Con el hostname aleatorio de Docker, el login se pierde en cada recreación de Canvas; por eso Canvas usa `hostname: ai-dev-team-canvas`.
+  - **Lección 2, el volumen (PR #25):** `~/.gemini` vive en el volumen `gemini-home`.
+  - **Para volver a iniciar sesión:** `docker compose exec -it -e NO_BROWSER=true canvas gemini` → "Login with Google". Si quedó un `gemini-credentials.json` ilegible (de otro hostname), hay que borrarlo antes, porque el login nuevo no lo reemplaza.
+- **Credenciales:** al `.env` de la mini-PC se pasaron solo las dos credenciales nuevas, con un backup antes. El `.env` local de la Mac tenía `REPOS` desactualizado.
+- **Pendiente de la tarea 10:**
+  - prueba en vivo de agotamiento simulado y un issue `size:S` de punta a punta;
+  - verificar en qué zona horaria informa Codex su reinicio.
+- **Menores diferidos de la review final:** ver el ledger del PR #24.
