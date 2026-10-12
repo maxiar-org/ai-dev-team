@@ -291,3 +291,31 @@ def test_metrics_failure_does_not_block_finishing(tmp_path, cfg):
     assert gh.labels(7) == {"engine:codex", "agent:qa"}
     d.run_once()  # no repite el cierre
     assert len(cv.created) == 2  # el ciclo siguiente arrancó QA, no se trabó
+
+
+LIMIT_MSG = "ACP error: You've hit your usage limit. ... try again at 10:38 PM."
+
+
+def test_usage_limit_requeues_task_and_marks_slot_exhausted(tmp_path, cfg):
+    d, gh, cv, ws, clock = make(tmp_path, cfg)
+    gh.add_item(Item(REPO, 3, "issue", "T", "", frozenset({"agent:dev"})))
+    d.run_once()
+    cv.status["conv1"] = "error"
+    cv.responses["conv1"] = LIMIT_MSG
+    d.run_once()
+    state = StateStore(cfg.state_path).load()
+    assert state.slot_exhausted_until["codex"] > clock.now
+    assert "agent:dev" in gh.labels(3) and "needs:human" not in gh.labels(3)
+    assert state.active == {}
+    assert "sin cupo" in gh.posted[-1][1]
+
+
+def test_comment_task_hit_by_limit_runs_again(tmp_path, cfg):
+    d, gh, cv, ws, clock = make(tmp_path, cfg)
+    gh.add_item(Item(REPO, 3, "issue", "WA", "", frozenset()))
+    gh.comments.append(Comment(56, REPO, 3, "maxiar", "@openhands seguí"))
+    d.run_once()
+    cv.status["conv1"] = "error"
+    cv.responses["conv1"] = LIMIT_MSG
+    d.run_once()
+    assert 56 not in StateStore(cfg.state_path).load().processed_comments

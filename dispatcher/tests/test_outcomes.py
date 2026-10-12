@@ -176,3 +176,29 @@ def test_docs_with_pr_goes_to_review_like_dev():
 def test_review_rounds_and_qa_rounds_are_preserved_when_unchanged():
     out = outcome_for(task("fix", "pr", 7), "finished", "", frozenset(), None, 1, 2, qa_rounds=1)
     assert (out.review_rounds, out.qa_rounds) == (1, 1)
+
+
+LIMIT_MSG = "ACP error: You've hit your usage limit. ... try again at 10:38 PM."
+
+
+@pytest.mark.parametrize("role,trigger_label", [("dev", "agent:dev"), ("review", "agent:review"), ("qa", "agent:qa"), ("fix", "agent:fix")])
+def test_usage_limit_requeues_without_needs_human(role, trigger_label):
+    t = task(role=role, kind="issue" if role == "dev" else "pr")
+    out = outcome_for(t, "error", LIMIT_MSG, frozenset(), None, 1, 2, qa_rounds=1, now=1_000.0, tz="UTC")
+    assert out.result == "limite" and out.limited_until is not None
+    assert AddLabels(3, ("needs:human",)) not in out.ops
+    assert RemoveLabel(3, "agent:working") in out.ops and AddLabels(3, (trigger_label,)) in out.ops
+    assert (out.review_rounds, out.qa_rounds) == (1, 1)
+    [comment] = [op for op in out.ops if isinstance(op, PostComment)]
+    assert "sin cupo" in comment.body
+
+
+def test_comment_or_conflict_task_hit_by_limit_does_not_readd_label():
+    out = outcome_for(task(trigger="comment"), "error", LIMIT_MSG, frozenset(), None, 0, 2, now=1_000.0, tz="UTC")
+    assert out.result == "limite"
+    assert not [op for op in out.ops if isinstance(op, AddLabels)]
+
+
+def test_other_errors_still_escalate():
+    out = outcome_for(task(), "error", "flutter test falló", frozenset(), None, 0, 2, now=1_000.0, tz="UTC")
+    assert out.result == "needs_human" and out.limited_until is None

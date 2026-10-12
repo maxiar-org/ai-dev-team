@@ -81,6 +81,8 @@ class Dispatcher:
             if item.kind == "pr" and item.mergeable_state not in (None, "dirty", "unknown"):
                 state.conflict_attempts.pop(item.key, None)
 
+        # Los cortes por límite vencidos se olvidan: el puesto vuelve a estar disponible.
+        state.slot_exhausted_until = {k: v for k, v in state.slot_exhausted_until.items() if v > now}
         actions = decide(items, comments, convs, state, self.cfg, now)
         for action in actions:
             try:
@@ -199,6 +201,7 @@ class Dispatcher:
         state.active[item.key] = ActiveTask(
             repo=item.repo, number=item.number, kind=item.kind, role=a.role, engine=a.engine,
             trigger=a.trigger, conversation_id=conv_id, started_at=now, workspace=str(path),
+            slot=a.slot, comment_id=a.comment_id,
         )
         if a.comment_id is not None:
             state.processed_comments.add(a.comment_id)
@@ -230,7 +233,7 @@ class Dispatcher:
         outcome = outcome_for(
             task, a.status, final, labels, pr,
             state.review_rounds.get(task.key, 0), self.cfg.max_review_rounds,
-            qa_rounds=state.qa_rounds.get(task.key, 0),
+            qa_rounds=state.qa_rounds.get(task.key, 0), now=now, tz=self.cfg.limit_tz,
         )
         failed = []
         for op in outcome.ops:
@@ -249,7 +252,13 @@ class Dispatcher:
                 )
             except Exception:
                 log.exception("Tampoco pude escalar %s", task.key)
-        # Siempre se libera la tarea: si no, su motor queda bloqueado para siempre.
+        if outcome.limited_until is not None:
+            state.slot_exhausted_until[task.slot or task.engine] = outcome.limited_until
+            if task.comment_id is not None:
+                state.processed_comments.discard(task.comment_id)  # el @openhands vuelve a correr
+            if task.trigger == "conflict":
+                state.conflict_attempts[task.key] = max(0, state.conflict_attempts.get(task.key, 1) - 1)
+        # Siempre se libera la tarea: si no, su puesto queda bloqueado para siempre.
         state.review_rounds[task.key] = outcome.review_rounds
         state.qa_rounds[task.key] = outcome.qa_rounds
         try:

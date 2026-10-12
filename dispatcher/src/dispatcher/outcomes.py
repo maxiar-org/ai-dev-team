@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from .limits import detect_limit
 from .models import (
     LABEL_DEV,
     LABEL_DOCS,
@@ -36,6 +38,7 @@ class Outcome:
     ops: tuple[GitHubOp, ...]
     review_rounds: int
     qa_rounds: int = 0
+    limited_until: float | None = None  # el puesto se quedó sin cupo hasta esta hora
 
 
 def parse_verdict(text: str) -> str | None:
@@ -79,6 +82,8 @@ def outcome_for(
     rounds: int,
     max_rounds: int,
     qa_rounds: int = 0,
+    now: float = 0.0,
+    tz: str = "UTC",
 ) -> Outcome:
     n = task.number
     # El label disparador se quita siempre: si quedara, la tarea se repetiría en bucle.
@@ -90,6 +95,19 @@ def outcome_for(
     def escalate(result: str, message: str, review: int = rounds, qa: int = qa_rounds) -> Outcome:
         ops.extend([AddLabels(n, (LABEL_HUMAN,)), PostComment(n, message)])
         return done(result, review, qa)
+
+    if status not in NORMAL_STATUSES and (until := detect_limit(final_response, now, tz)) is not None:
+        # Límite de uso de la cuenta: no es culpa del trabajo. La tarea vuelve a la fila como estaba.
+        limit_ops: list[GitHubOp] = [RemoveLabel(n, LABEL_WORKING)]
+        if task.trigger == "label":
+            limit_ops.append(AddLabels(n, (TRIGGER_LABELS[task.role],)))
+        hhmm = time.strftime("%H:%M", time.gmtime(until))
+        limit_ops.append(PostComment(
+            n,
+            f"⏳ `{task.slot or task.engine}` se quedó sin cupo (hasta las {hhmm} UTC). "
+            "La tarea vuelve a la fila: la toma otro puesto disponible o este mismo cuando se reinicie.",
+        ))
+        return Outcome("limite", tuple(limit_ops), rounds, qa_rounds, until)
 
     if status not in NORMAL_STATUSES:
         return escalate(
