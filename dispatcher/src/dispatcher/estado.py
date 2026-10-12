@@ -8,19 +8,22 @@ import os
 import socket
 import threading
 import time
+from dataclasses import asdict
+from datetime import datetime, timezone
 from html import escape
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
+from .config import DEFAULT_SLOTS, parse_slot_costs, parse_slot_labels, parse_slots
 from .coolify import CoolifyClient
 from .github import GitHubClient
-from .metrics import MetricsLog
+from .metrics import LimitLog, MetricsLog
 from .models import LABEL_HUMAN
 from .resumen_client import ResumenClient
 from .summary import NOTICE_MARK, period_data
-from .render import render
+from .render import render_all
 from .view import AGE_MARK, PRInfo, Snapshot, awaits_human, build_view
 from .watchdog import parse_expiry, run_checks
 
@@ -29,11 +32,19 @@ log = logging.getLogger("estado")
 
 class Collector:
     def __init__(self, github, coolify, repos, org, bot_login, ops_repo, state_path: Path, metrics_path: Path,
-                 checker: Callable[[], list], expiries: dict, resumen=None):
+                 checker: Callable[[], list], expiries: dict, resumen=None, limits_path: Path | None = None,
+                 slots=DEFAULT_SLOTS, slot_costs=None, slot_labels=None, image_usd: float = 0.04,
+                 tz: str = "America/Argentina/Buenos_Aires", search_every: float = 600, health_links=None):
         self.github, self.coolify, self.repos, self.org = github, coolify, repos, org
         self.bot_login, self.ops_repo = bot_login, ops_repo
         self.state_path, self.metrics_path, self.checker, self.expiries = state_path, metrics_path, checker, expiries
         self.resumen = resumen
+        self.limits_path, self.slots, self.image_usd, self.tz = limits_path, tuple(slots), image_usd, tz
+        self.slot_costs, self.slot_labels = dict(slot_costs or {}), dict(slot_labels or {})
+        self.search_every = search_every
+        self.health_links = dict(health_links or {})
+        self._period: tuple[float, list, list] | None = None  # (cuándo, cerrados, mergeados): búsquedas de GitHub cacheadas
+        self._views: tuple[float, dict] | None = None  # (cuándo, vistas de Projects por repo)
 
     def period(self, since: str) -> tuple[list, list, list, list]:
         org = self.org
@@ -65,7 +76,9 @@ class Collector:
         snap.human_notes.update(notes)
 
     def collect(self, now: float) -> Snapshot:
-        snap = Snapshot(now=now, org=self.org, expiries=self.expiries)
+        snap = Snapshot(now=now, org=self.org, expiries=self.expiries, repos=tuple(self.repos), slots=self.slots,
+                        slot_costs=self.slot_costs, slot_labels=self.slot_labels, image_usd=self.image_usd, tz=self.tz,
+                        health_links=self.health_links)
 
         def section(name: str, fn: Callable[[], None]) -> None:
             try:
@@ -89,7 +102,9 @@ class Collector:
 
         def dispatcher() -> None:
             if self.state_path.exists():
-                snap.active = json.loads(self.state_path.read_text()).get("active", {})
+                data = json.loads(self.state_path.read_text())
+                snap.active = data.get("active", {})
+                snap.exhausted = {k: float(v) for k, v in data.get("slot_exhausted_until", {}).items()}
 
         def coolify() -> None:
             if self.coolify is not None:
@@ -103,39 +118,80 @@ class Collector:
             if self.resumen is not None:
                 snap.summary = self.resumen.status()
 
+        def consumo() -> None:
+            if self.limits_path is not None:
+                snap.limits = LimitLog(self.limits_path).read()
+            try:
+                if self._period is None or now - self._period[0] >= self.search_every:
+                    since = datetime.fromtimestamp(now - 30 * 86400, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    closed = self.github.search_since(f"org:{self.org} is:issue is:closed closed:>={since}")
+                    merged = self.github.search_since(f"org:{self.org} is:pr is:merged merged:>={since}")
+                    self._period = (now, closed, merged)
+            finally:
+                if self._period is not None:  # si GitHub falla, se muestran los datos de la última búsqueda buena
+                    snap.closed, snap.merged = self._period[1], self._period[2]
+
+        def vistas() -> None:
+            try:
+                if self._views is None or now - self._views[0] >= self.search_every:
+                    self._views = (now, self.github.repo_projects(list(self.repos)))
+            finally:
+                if self._views is not None:
+                    snap.repo_projects = self._views[1]
+
         section("github", github)
         section("dispatcher", dispatcher)
         section("coolify", coolify)
         section("salud", salud)
+        section("consumo", consumo)
+        section("vistas", vistas)
         section("resumen", resumen)
         return snap
 
 
 class Page:
-    """Último HTML generado (y su vista); la antigüedad y el aviso se completan en cada pedido."""
+    """Último HTML generado por rango (y su vista); la antigüedad y el aviso se completan en cada pedido."""
 
     def __init__(self) -> None:
-        self.html = "<!doctype html><meta charset=utf-8><p>Cargando…</p>"
+        self.html = {"7": "<!doctype html><meta charset=utf-8><p>Cargando…</p>"}
         self.generated_at = time.time()
         self.view = None
         self.lock = threading.Lock()  # el hilo de recolección y los pedidos HTTP la actualizan
 
-    def update(self, html: str, generated_at: float, view=None) -> None:
+    def update(self, html: str | dict[str, str], generated_at: float, view=None) -> None:
         with self.lock:
-            self.html, self.generated_at = html, generated_at
+            self.html = dict(html) if isinstance(html, dict) else {"7": html}
+            self.generated_at = generated_at
             if view is not None:
                 self.view = view
 
-    def body(self, now: float, notice: str | None = None) -> str:
+    def body(self, now: float, notice: str | None = None, rango: str = "7") -> str:
         aviso = f'<p class="bad">Aviso: {escape(notice[:300])}</p>' if notice else ""
-        return self.html.replace(AGE_MARK, str(max(0, int(now - self.generated_at)))).replace(NOTICE_MARK, aviso)
+        html = self.html.get(rango) or self.html["7"]
+        return html.replace(AGE_MARK, str(max(0, int(now - self.generated_at)))).replace(NOTICE_MARK, aviso)
+
+    def api(self) -> tuple[int, bytes]:
+        view = self.view
+        if view is None:
+            return 503, b'{"error": "sin datos"}'
+        return 200, json.dumps(asdict(view), default=str, ensure_ascii=False).encode()
+
+
+def parse_health_links(raw: str) -> dict[str, str]:
+    """HEALTH_LINKS="canvas=https://…,coolify=https://…": a dónde lleva cada píldora de salud."""
+    links = {}
+    for part in raw.split(","):
+        name, sep, url = part.partition("=")
+        if sep and url.strip().startswith("https://"):
+            links[name.strip().lower()] = url.strip()
+    return links
 
 
 def refresh(page: Page, collector, now: float) -> None:
     """Regenera la página; si algo falla, muestra el error en lugar de dejar la versión vieja congelada."""
     try:
         view = build_view(collector.collect(now))
-        page.update(render(view), now, view)
+        page.update(render_all(view), now, view)
     except Exception as exc:
         log.exception("No pude armar la vista")
         with page.lock:
@@ -155,7 +211,7 @@ def refresh_summary(page: Page, resumen, now: float) -> None:
         view.errors.pop("resumen", None)
     except Exception as exc:
         view.errors["resumen"] = f"{type(exc).__name__}: {exc}"[:200]
-    html = render(view)
+    html = render_all(view)
     with page.lock:
         if page.view is view:  # si la recolección ya trajo una vista nueva, no se pisa
             page.html = html
@@ -173,7 +229,7 @@ def handle_post(page: Page, collector, resumen, origin: str | None, expected_ori
     if not _same_origin(origin, expected_origin):
         return 403, ""
     if resumen is None or page.view is None:
-        return 303, "/?error=" + quote("El resumen no está configurado o la vista todavía no cargó")
+        return 303, "/?error=" + quote("El resumen no está configurado o la vista todavía no cargó") + "#resumen"
     try:
         st = resumen.status()
         if st.get("status") != "running":
@@ -181,9 +237,9 @@ def handle_post(page: Page, collector, resumen, origin: str | None, expected_ori
             resumen.request(period_data(page.view, since, now, *collector.period(since)))
     except Exception as exc:
         log.warning("No pude pedir el resumen: %s", exc)
-        return 303, "/?error=" + quote(f"No pude pedir el resumen: {type(exc).__name__}: {exc}"[:300])
+        return 303, "/?error=" + quote(f"No pude pedir el resumen: {type(exc).__name__}: {exc}"[:300]) + "#resumen"
     refresh_summary(page, resumen, now)
-    return 303, "/"
+    return 303, "/#resumen"
 
 
 def serve(page: Page, port: int, collector=None, resumen=None, expected_origin: str = "",
@@ -203,10 +259,15 @@ def serve(page: Page, port: int, collector=None, resumen=None, expected_origin: 
             url = urlparse(self.path)
             if url.path == "/health":
                 return self._send(200, b"ok")
+            if url.path == "/api/estado":
+                code, body = page.api()
+                return self._send(code, body, "application/json; charset=utf-8")
             if page.view is not None and (page.view.summary or {}).get("status") == "running":
                 refresh_summary(page, resumen, time.time())
-            notice = parse_qs(url.query).get("error", [None])[0]
-            self._send(200, page.body(time.time(), notice).encode(), "text/html; charset=utf-8")
+            query = parse_qs(url.query)
+            notice = query.get("error", [None])[0]
+            rango = query.get("rango", ["7"])[0]
+            self._send(200, page.body(time.time(), notice, rango).encode(), "text/html; charset=utf-8")
 
         def do_POST(self):  # noqa: N802
             if urlparse(self.path).path != "/resumen":
@@ -239,6 +300,7 @@ def main() -> None:
     checker = lambda: run_checks(  # noqa: E731
         env.get("CANVAS_URL", "http://canvas:8000"), env["CANVAS_API_KEY"], Path(env.get("HEARTBEAT_PATH", "/state/heartbeat")),
         env.get("TUNNEL_READY_URL", ""), "/", time.time(), coolify_health_url=env.get("COOLIFY_HEALTH_URL", ""))
+    slots = parse_slots(env)
     collector = Collector(
         github, coolify, tuple(r.strip() for r in env["REPOS"].split(",") if r.strip()), org,
         env.get("BOT_LOGIN", "maxiar-ai-dev-team-bot"), env.get("OPS_REPO", "ai-dev-team"),
@@ -246,6 +308,11 @@ def main() -> None:
         {"GITHUB_TOKEN": parse_expiry(env.get("GITHUB_TOKEN_EXPIRES")),
          "CLAUDE_CODE_OAUTH_TOKEN": parse_expiry(env.get("CLAUDE_TOKEN_EXPIRES"))},
         resumen=resumen,
+        limits_path=Path(env.get("LIMITS_PATH", "/pilot/limits.csv")),
+        slots=slots, slot_costs=parse_slot_costs(env, slots), slot_labels=parse_slot_labels(env, slots),
+        image_usd=float(env.get("GEMINI_IMAGE_USD", "").strip() or 0.04),
+        tz=env.get("ESTADO_TZ", "").strip() or "America/Argentina/Buenos_Aires",
+        health_links=parse_health_links(env.get("HEALTH_LINKS", "")),
     )
     page = Page()
     interval = int(env.get("ESTADO_INTERVAL", "60"))
