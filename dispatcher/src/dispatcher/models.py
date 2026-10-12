@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal, Union
 
@@ -17,6 +18,7 @@ LABEL_FIX = "agent:fix"
 LABEL_HUMAN = "needs:human"
 LABEL_QA = "agent:qa"
 LABEL_DOCS = "agent:docs"
+CLOSES_RE = re.compile(r"(?i)\b(?:closes|fixes|resolves|cierra)\s+#(\d+)\b")
 
 
 def item_key(repo: str, number: int) -> str:
@@ -54,6 +56,8 @@ class Item:
     node_id: str = ""  # id GraphQL, para el tablero de Projects
     mergeable_state: str | None = None  # solo PRs: "dirty" = conflictos con la base
     draft: bool = False  # solo PRs: en borrador no pasan a review ni a QA
+    updated_at: str = ""  # ISO de GitHub: la antigüedad en la pantalla de estado
+    sub_issues: tuple[int, int] | None = None  # épicas: (completados, total) de sub_issues_summary
 
     @property
     def key(self) -> str:

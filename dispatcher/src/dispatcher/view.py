@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 from html import escape
 
 from .decide import parse_dependencies
-from .models import LABEL_DEV, LABEL_DOCS, LABEL_FIX, LABEL_HUMAN, LABEL_QA, LABEL_REVIEW, LABEL_WORKING, Item
+from .models import CLOSES_RE, LABEL_DEV, LABEL_DOCS, LABEL_FIX, LABEL_HUMAN, LABEL_QA, LABEL_REVIEW, LABEL_WORKING, Item
 from .watchdog import Check
 
 
@@ -26,7 +26,6 @@ class AppInfo:
 
 
 AGENT_LABELS = frozenset({LABEL_WORKING, LABEL_REVIEW, LABEL_FIX, LABEL_QA})
-CLOSES_RE = re.compile(r"(?i)\b(?:closes|fixes|resolves|cierra)\s+#(\d+)\b")
 ROLE_NAMES = {"dev": "dev", "review": "review", "qa": "QA", "fix": "fix", "docs": "docs"}
 
 
@@ -42,6 +41,7 @@ class PRInfo:
     mergeable_state: str | None = None
     ci: str = "none"
     files: tuple[str, ...] = ()
+    updated_at: str = ""
 
 
 @dataclass

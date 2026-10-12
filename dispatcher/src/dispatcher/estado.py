@@ -49,9 +49,10 @@ class Collector:
                 if awaits_human(it.labels):  # el detalle (3 llamadas) solo para los que pueden esperar a Eduardo
                     d = self.github.pr_details(repo, it.number)
                     prs.append(PRInfo(repo, it.number, it.title, url, it.labels, it.body, d["head_ref"],
-                                      d["mergeable_state"], d["ci"], d["files"]))
+                                      d["mergeable_state"], d["ci"], d["files"], it.updated_at))
                 else:
-                    prs.append(PRInfo(repo, it.number, it.title, url, it.labels, it.body, it.head_ref or ""))
+                    prs.append(PRInfo(repo, it.number, it.title, url, it.labels, it.body, it.head_ref or "",
+                                      updated_at=it.updated_at))
             else:
                 issues.append(it)
             if LABEL_HUMAN in it.labels:
