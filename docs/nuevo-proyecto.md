@@ -80,10 +80,17 @@ Guía para incorporar un proyecto al AI Dev Team y para saber **dónde va cada c
 - [ ] Revisar que el repo no tenga secretos ni archivos pesados que no correspondan (por ejemplo `.zip` o `.env`).
 
 ### 4. Despliegue (si es web)
-- [ ] Crear la app en Coolify, en el proyecto `labs`, y activar las previews (ver "Coolify y previews" en el README).
-  - Dominios: `<proyecto>.maxiar.dev` y `<proyecto>-pr-N.maxiar.dev`.
+
+Hacelo apenas se mergee el issue que deja el `Dockerfile`, no al final de la fase: así los QA y Eduardo prueban cada PR en su preview desde el principio.
+
+- [ ] **Sumar el repo a la GitHub App de Coolify** (Eduardo): la app `maxiar-org` está instalada con acceso a algunos repos nada más. En https://github.com/organizations/maxiar-org/settings/installations, "Repository access", agregar el repo nuevo. Sin esto, Coolify responde "Repository not found or not accessible by the GitHub App".
+- [ ] Crear la app en Coolify, en el proyecto `labs`, y activar las previews (ver "Coolify y previews" en el README). Se puede por la API (`POST /api/v1/applications/private-github-app`, después `PATCH` con `preview_url_template` e `is_preview_deployments_enabled`, y `POST /api/v1/deploy?uuid=…`).
+  - Dominios: `<proyecto>.maxiar.dev` y `<proyecto>-pr-{{pr_id}}.maxiar.dev`.
   - Si usa compose con base de datos, la app lee `SERVICE_NAME_<SVC>` en tiempo de ejecución.
 - [ ] Crear una aplicación de Access para las previews (`<proyecto>-pr-*`), y otra para la versión estable si no es pública.
+  - `*.maxiar.dev` es solo el ruteo del túnel hacia Coolify: **no hay un comodín general de Access**. Sin aplicación propia, la versión estable queda pública (como `qr.maxiar.dev`).
+  - En el formulario de Access, el subdominio va solo (`<proyecto>-pr-*`) y el dominio aparte (`maxiar.dev`). Si se escribe el nombre completo en el subdominio queda `…maxiar.dev.maxiar.dev` y no protege nada.
+  - Verificar: `curl -sI https://<proyecto>-pr-1.maxiar.dev` tiene que responder 302 hacia `cloudflareaccess.com`.
 - [ ] Secretos solo como variables de entorno de Coolify, para producción y previews.
 
 ### 5. Planificación y primer lote de issues
