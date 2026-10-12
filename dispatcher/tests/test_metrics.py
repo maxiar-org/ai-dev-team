@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from dispatcher.metrics import FIELDS, MetricsLog, summarize
+from dispatcher.metrics import FIELDS, LimitLog, MetricsLog, summarize
 from dispatcher.models import ActiveTask, ConvInfo
 
 T0 = datetime(2026, 10, 3, 22, 0, tzinfo=timezone.utc)
@@ -39,3 +39,24 @@ def test_summarize_groups_by_engine_result_and_window():
     assert "| claude | 1 | 1 | 10.0 | 0 | 0 | 0.10 |" in md
     assert "| aprobado | 1 |" in md and "| pr_abierto | 3 |" in md
     assert "| qr | #7 | sí |" in md
+
+
+def active_task():
+    return ActiveTask("qr", 1, "issue", "dev", "codex", "label", "c2", 0.0, "/w", slot="codex-senior")
+
+
+def test_old_header_is_upgraded_without_misaligning_rows(tmp_path):
+    p = tmp_path / "metrics.csv"
+    old = ",".join(FIELDS[:-2])
+    p.write_text(old + "\nqr,1,issue,dev,codex,label,a,b,1.0,finished,pr_abierto,0,0,0,0.0000,c1\n")
+    MetricsLog(p).append(active_task(), "finished", "pr_abierto", None, 100.0, images=2)
+    rows = MetricsLog(p).read()
+    assert rows[0]["conversacion"] == "c1" and rows[0]["puesto"] == ""
+    assert rows[1]["puesto"] == "codex-senior" and rows[1]["imagenes_gemini"] == "2"
+
+
+def test_limit_log_appends(tmp_path):
+    log = LimitLog(tmp_path / "limits.csv")
+    log.append("codex-senior", "codex", 10.0, 20.0, "qr#1", "x" * 500)
+    [row] = log.read()
+    assert row["puesto"] == "codex-senior" and len(row["mensaje"]) == 200

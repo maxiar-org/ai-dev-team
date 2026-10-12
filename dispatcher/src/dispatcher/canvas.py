@@ -86,6 +86,25 @@ class CanvasClient:
         infos = (parse_conversation(raw) for raw in resp.json() if raw is not None)
         return {info.id: info for info in infos}
 
+    def count_tool_calls(self, conversation_id: str, needle: str) -> int:
+        """Llamadas a herramientas terminadas sin error cuyo nombre contiene `needle` (p. ej. generate_image)."""
+        seen: set[str] = set()
+        page: str | None = None
+        while True:
+            params: dict[str, Any] = {"limit": 100}
+            if page:
+                params["page_id"] = page
+            resp = self.http.get(f"/api/conversations/{conversation_id}/events/search", params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            for e in data.get("items", []):
+                if (e.get("kind") == "ACPToolCallEvent" and needle in (e.get("title") or "")
+                        and e.get("status") == "completed" and not e.get("is_error")):
+                    seen.add(e.get("tool_call_id") or e.get("id", ""))
+            page = data.get("next_page_id")
+            if not page:
+                return len(seen)
+
     def final_response(self, conversation_id: str) -> str:
         resp = self.http.get(f"/api/conversations/{conversation_id}/agent_final_response")
         resp.raise_for_status()

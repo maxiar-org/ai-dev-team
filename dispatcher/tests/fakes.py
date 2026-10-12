@@ -94,6 +94,9 @@ class FakeCanvas:
             if i in self.status
         }
 
+    def count_tool_calls(self, conversation_id, needle):
+        return 0
+
     def final_response(self, conversation_id):
         return self.responses.get(conversation_id, "")
 

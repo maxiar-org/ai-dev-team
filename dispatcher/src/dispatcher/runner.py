@@ -45,7 +45,7 @@ log = logging.getLogger("dispatcher")
 
 class Dispatcher:
     def __init__(self, cfg: Config, github, canvas, workspace, store: StateStore, metrics: MetricsLog,
-                 clock: Callable[[], float] = time.time, board=None):
+                 clock: Callable[[], float] = time.time, board=None, limit_log=None):
         self.cfg = cfg
         self.github = github
         self.canvas = canvas
@@ -54,6 +54,7 @@ class Dispatcher:
         self.metrics = metrics
         self.clock = clock
         self.board = board
+        self.limit_log = limit_log
 
     def run_once(self) -> list[Action]:
         state = self.store.load()
@@ -261,8 +262,19 @@ class Dispatcher:
         # Siempre se libera la tarea: si no, su puesto queda bloqueado para siempre.
         state.review_rounds[task.key] = outcome.review_rounds
         state.qa_rounds[task.key] = outcome.qa_rounds
+        images = 0
+        if a.conv is not None:
+            try:
+                images = self.canvas.count_tool_calls(task.conversation_id, "generate_image")
+            except Exception:
+                log.warning("No pude contar las imágenes de %s", task.conversation_id)
+        if outcome.limited_until is not None and self.limit_log is not None:
+            try:
+                self.limit_log.append(task.slot or task.engine, task.engine, now, outcome.limited_until, task.key, final)
+            except Exception:
+                log.exception("No pude registrar el corte de %s", task.key)
         try:
-            self.metrics.append(task, a.status, outcome.result, a.conv, now)
+            self.metrics.append(task, a.status, outcome.result, a.conv, now, images=images)
         except Exception:
             # Las métricas nunca deben trabar el flujo: si no se pueden escribir, se registra y se sigue.
             log.exception("No pude registrar las métricas de %s", task.key)

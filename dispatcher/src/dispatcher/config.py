@@ -77,6 +77,7 @@ class Config:
     slot_costs: dict[str, float] = field(default_factory=dict)
     limit_tz: str = "America/Argentina/Buenos_Aires"
     gemini_image_usd: float = 0.04
+    limits_path: Path | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -150,4 +151,5 @@ class Config:
             slot_costs=costs,
             limit_tz=env.get("LIMIT_TZ", "").strip() or "America/Argentina/Buenos_Aires",
             gemini_image_usd=float(env.get("GEMINI_IMAGE_USD", "").strip() or 0.04),
+            limits_path=Path(env.get("LIMITS_PATH", "").strip() or "/pilot/limits.csv"),
         )

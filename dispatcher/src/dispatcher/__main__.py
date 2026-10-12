@@ -8,7 +8,7 @@ import logging
 from .canvas import CanvasClient
 from .config import Config
 from .github import GitHubClient
-from .metrics import MetricsLog, summarize
+from .metrics import LimitLog, MetricsLog, summarize
 from .projects import ProjectBoard
 from .runner import Dispatcher, run_forever
 from .state import StateStore
@@ -24,6 +24,7 @@ def build(cfg: Config) -> Dispatcher:
         StateStore(cfg.state_path),
         MetricsLog(cfg.metrics_path),
         board=ProjectBoard(cfg.github_token, cfg.github_org, cfg.project_number) if cfg.project_number else None,
+        limit_log=LimitLog(cfg.limits_path) if cfg.limits_path else None,
     )
 
 
