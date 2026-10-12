@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 import re
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from .limits import detect_limit
 from .models import (
     LABEL_DEV,
     LABEL_DOCS,
@@ -27,6 +30,8 @@ VERDICT_RE = re.compile(r"VEREDICTO:\s*\**\s*(APROBADO|CAMBIOS)", re.IGNORECASE)
 QA_VERDICT_RE = re.compile(r"QA:\s*\**\s*(OK|FALLA|N/A)", re.IGNORECASE)
 SNIPPET_CHARS = 1500
 NORMAL_STATUSES = frozenset({"finished", "idle"})
+LIMIT_STATUSES = frozenset({"error", "stuck"})  # un timeout o una conversación perdida no son un límite de cuenta
+MAX_LIMIT_STREAK = 3
 TRIGGER_LABELS = {"dev": LABEL_DEV, "review": LABEL_REVIEW, "fix": LABEL_FIX, "qa": LABEL_QA, "docs": LABEL_DOCS}
 
 
@@ -36,6 +41,7 @@ class Outcome:
     ops: tuple[GitHubOp, ...]
     review_rounds: int
     qa_rounds: int = 0
+    limited_until: float | None = None  # el puesto se quedó sin cupo hasta esta hora
 
 
 def parse_verdict(text: str) -> str | None:
@@ -79,6 +85,9 @@ def outcome_for(
     rounds: int,
     max_rounds: int,
     qa_rounds: int = 0,
+    now: float = 0.0,
+    tz: str = "UTC",
+    limit_streak: int = 0,
 ) -> Outcome:
     n = task.number
     # El label disparador se quita siempre: si quedara, la tarea se repetiría en bucle.
@@ -90,6 +99,26 @@ def outcome_for(
     def escalate(result: str, message: str, review: int = rounds, qa: int = qa_rounds) -> Outcome:
         ops.extend([AddLabels(n, (LABEL_HUMAN,)), PostComment(n, message)])
         return done(result, review, qa)
+
+    if status in LIMIT_STATUSES and (until := detect_limit(final_response, now, tz)) is not None:
+        if limit_streak + 1 >= MAX_LIMIT_STREAK:
+            out = escalate(
+                "limite_repetido",
+                f"⚠️ La tarea `{task.role}` se cortó por límite de uso {limit_streak + 1} veces seguidas. "
+                f"Revisa las cuentas o el mensaje del agente.\n\n{_quote(final_response)}",
+            )
+            return dataclasses.replace(out, limited_until=until)
+        # Límite de uso de la cuenta: no es culpa del trabajo. La tarea vuelve a la fila como estaba.
+        limit_ops: list[GitHubOp] = [RemoveLabel(n, LABEL_WORKING)]
+        if task.trigger == "label":
+            limit_ops.append(AddLabels(n, (TRIGGER_LABELS[task.role],)))
+        hhmm = time.strftime("%H:%M", time.gmtime(until))
+        limit_ops.append(PostComment(
+            n,
+            f"⏳ `{task.slot or task.engine}` se quedó sin cupo (hasta las {hhmm} UTC). "
+            "La tarea vuelve a la fila: la toma otro puesto disponible o este mismo cuando se reinicie.",
+        ))
+        return Outcome("limite", tuple(limit_ops), rounds, qa_rounds, until)
 
     if status not in NORMAL_STATUSES:
         return escalate(
@@ -106,6 +135,10 @@ def outcome_for(
         if pr is not None and pr.draft:
             return done("pr_borrador")
         if pr is not None:
+            # El PR nombra solo al último motor que programó: con dos engine:* la review no tendría a quién ir.
+            for label in sorted(pr.labels):
+                if label.startswith("engine:") and label != f"engine:{task.engine}":
+                    ops.append(RemoveLabel(pr.number, label))
             ops.append(AddLabels(pr.number, (LABEL_REVIEW, f"engine:{task.engine}")))
             return done("pr_abierto")
         return escalate(

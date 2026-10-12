@@ -22,3 +22,18 @@ def test_roundtrip_is_lossless_and_atomic(tmp_path):
     store.save(state)
     assert store.load() == state
     assert not (tmp_path / "sub" / "s.tmp").exists()
+
+
+def test_old_state_without_slots_loads(tmp_path):
+    p = tmp_path / "state.json"
+    p.write_text('{"active": {"qr#1": {"repo": "qr", "number": 1, "kind": "issue", "role": "dev", "engine": "codex", '
+                 '"trigger": "label", "conversation_id": "c", "started_at": 1.0, "workspace": "/w"}}}')
+    state = StateStore(p).load()
+    assert state.active["qr#1"].slot == "" and state.slot_exhausted_until == {}
+
+
+def test_slot_exhaustion_round_trips(tmp_path):
+    store = StateStore(tmp_path / "state.json")
+    state = State(slot_exhausted_until={"codex-senior": 123.0})
+    store.save(state)
+    assert store.load().slot_exhausted_until == {"codex-senior": 123.0}

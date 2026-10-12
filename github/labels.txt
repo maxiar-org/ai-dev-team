@@ -8,3 +8,9 @@ engine:claude|c5def5|Motor: Claude Code
 engine:codex|bfd4f2|Motor: Codex
 agent:qa|0e8a16|QA prueba el comportamiento de este PR (lo pone el dispatcher)
 agent:docs|c2e0c6|El agente de docs documenta este issue
+engine:gemini|1d76db|Motor: Gemini (forzar)
+size:S|c2e0c6|Tarea chica: pocas horas, uno o dos archivos
+size:M|fef2c0|Tarea mediana (valor por defecto)
+size:L|f9d0c4|Tarea grande: la toma Claude senior; mejor partirla
+kind:architecture|5319e7|Decisiones de diseño técnico: la toma Claude senior
+needs:images|bfd4f2|La tarea genera imágenes (Codex primero, Gemini de respaldo)

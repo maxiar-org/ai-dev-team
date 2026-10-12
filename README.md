@@ -10,11 +10,11 @@ toma issues etiquetados, abre PRs, los revisa con otro modelo y te pide la aprob
 
 | Tú haces | Qué pasa |
 |---|---|
-| Pones `agent:dev` en un issue | El dev (Codex por defecto; `engine:claude` lo cambia) implementa con TDD y abre un PR |
-| — | El dispatcher le pone `agent:review` al PR y lo revisa el otro modelo |
+| Pones `agent:dev` en un issue | El dev implementa con TDD y abre un PR. Qué puesto lo toma depende de `size:*`, `kind:architecture` y `needs:images` (ver [Puestos del equipo](#puestos-del-equipo)); `engine:*` lo fuerza |
+| — | El dispatcher le pone `agent:review` al PR y lo revisa otro motor: Claude revisa a Codex y a Gemini, Codex revisa a Claude |
 | — | Si hay `VEREDICTO: CAMBIOS`, el dev corrige (máximo 2 rondas) |
-| — | Si hay `VEREDICTO: APROBADO`, el PR pasa a **QA** (Codex), que prueba la app con Playwright: `QA: OK` → te llega un pedido de review; `QA: FALLA` → vuelve al dev |
-| Pones `agent:docs` en un issue | El agente de docs (Claude por defecto) actualiza el sitio Starlight del repo y abre un PR |
+| — | Si hay `VEREDICTO: APROBADO`, el PR pasa a **QA** (Gemini; si no hay, Codex), que prueba la app con Playwright: `QA: OK` → te llega un pedido de review; `QA: FALLA` → vuelve al dev |
+| Pones `agent:docs` en un issue | El agente de docs (Codex por defecto) actualiza el sitio Starlight del repo y abre un PR |
 | Comentas `@openhands ...` en un issue o PR (comentario normal o review del PR; no en comentarios sobre líneas de código) | El dev retoma la tarea con tu instrucción |
 | — | Si un PR queda con conflictos con `main` (por ejemplo, después de mergear otro), el dev los resuelve solo (máximo 2 intentos) y el PR vuelve a review y QA |
 | Escribes `Depende de #N` en un issue | El dispatcher no lo arranca hasta que el #N se cierre, y lo avisa con un comentario |
@@ -24,6 +24,44 @@ toma issues etiquetados, abre PRs, los revisa con otro modelo y te pide la aprob
 Para ver el trabajo en vivo, abre http://localhost:8000/canvas (pide la `CANVAS_API_KEY`).
 
 Para ver el estado general, usa el **tablero** https://github.com/orgs/maxiar-org/projects/1. El dispatcher agrega cada issue y PR de los repos en `REPOS` y lo mueve de columna según sus labels: Backlog → Listo para agentes → En curso → En review / Necesita a Eduardo. La columna Hecho la pone la automatización nativa del tablero al cerrar o mergear.
+
+## Puestos del equipo
+
+El dispatcher trabaja por **puestos**. Un puesto es una cuenta de un motor y corre **una tarea a la vez**: varios puestos trabajan en paralelo. Se configuran en `.env`:
+
+```
+SLOTS=claude-senior:claude:senior,codex-senior:codex:senior,gemini:gemini:senior   # nombre:motor:nivel
+SLOT_COST_CLAUDE_SENIOR=100      # costo fijo mensual en USD, para el presupuesto
+LIMIT_TZ=America/Argentina/Buenos_Aires
+GEMINI_IMAGE_USD=0.04
+```
+Sin `SLOTS` hay un puesto por motor (`claude` y `codex`). Para sumar un puesto, agregalo a `SLOTS` y su `SLOT_COST_<PUESTO>` al servicio `dispatcher` del compose. Dos puestos del mismo motor todavía no se admiten: necesitan credenciales separadas (fase 5a, sección 2.1 del spec).
+
+**Quién toma cada tarea** (spec `docs/superpowers/specs/2026-10-12-fase-5a-equipo-por-puestos-design.md`):
+
+| Tarea | Preferido | Respaldo | ¿Espera al preferido? |
+|---|---|---|---|
+| Dev con `kind:architecture` o `size:L` | Claude | Codex | Sí; pasa al respaldo si el preferido está sin cupo por más de 2 h |
+| Dev `size:S` o `size:M` (sin `size:*` cuenta como M) | Codex | Gemini, Claude | Sí |
+| Dev con `needs:images` | Codex | Gemini | Sí |
+| Review | Otro motor que el del dev | Cualquier otro motor que no sea el del dev | No |
+| QA | Gemini | Codex, Claude | No |
+| Fix | El motor que programó | Cualquiera | No |
+| Docs | Codex | Gemini, Claude | No |
+
+- **Forzar un motor:** `engine:*` en el issue lo fuerza, y sin respaldo.
+- **Prioridad:** con un puesto libre, el dispatcher toma primero los comentarios `@openhands`, después los conflictos, fix, review, QA y, por último, dev y docs nuevos. La idea es terminar antes de empezar.
+
+**Límite de uso:** si una conversación termina con un mensaje de límite (`usage limit`, `session limit`, `RESOURCE_EXHAUSTED`):
+- el puesto queda **sin cupo** hasta la hora de reinicio más 5 minutos (1 hora si el mensaje no la dice);
+- la tarea **vuelve a la fila** con su label, sin `needs:human` y sin contar una ronda;
+- un solo comentario lo avisa;
+- nunca se le asigna una tarea a un puesto sin cupo.
+
+**Métricas:**
+- `pilot/metrics.csv` suma las columnas `puesto` e `imagenes_gemini`;
+- `pilot/limits.csv` registra cada corte;
+- `dispatcher.team_report` calcula el consumo por puesto y las alertas de presupuesto (subir o bajar de nivel, retrabajo alto), que muestra la pantalla de estado.
 
 ## Arrancar
 

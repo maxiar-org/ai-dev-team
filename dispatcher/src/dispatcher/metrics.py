@@ -13,21 +13,42 @@ from .models import ActiveTask, ConvInfo
 FIELDS = [
     "repo", "numero", "tipo", "rol", "motor", "disparador", "inicio", "fin", "duracion_min",
     "estado_final", "resultado", "tokens_entrada", "tokens_salida", "tokens_cache",
-    "costo_estimado_usd", "conversacion",
+    "costo_estimado_usd", "conversacion", "puesto", "imagenes_gemini",
 ]
+LIMIT_FIELDS = ["puesto", "motor", "detectado", "hasta", "tarea", "mensaje"]
 
 
 def iso(ts: float) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat(timespec="seconds")
 
 
+def _ensure_header(path: Path, fields: list[str]) -> bool:
+    """True si el archivo está vacío o no existe. Si tiene un encabezado viejo, lo reescribe con las columnas nuevas."""
+    if not path.exists() or path.stat().st_size == 0:
+        return True
+    with path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        if reader.fieldnames == fields:
+            return False
+        rows = list(reader)
+    tmp = path.with_suffix(".tmp")
+    with tmp.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({f: row.get(f, "") for f in fields})
+    tmp.replace(path)
+    return False
+
+
 class MetricsLog:
     def __init__(self, path: Path):
         self.path = path
 
-    def append(self, task: ActiveTask, status: str, result: str, conv: ConvInfo | None, finished_at: float) -> None:
-        new_file = not self.path.exists() or self.path.stat().st_size == 0
+    def append(self, task: ActiveTask, status: str, result: str, conv: ConvInfo | None, finished_at: float,
+               images: int = 0) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        new_file = _ensure_header(self.path, FIELDS)
         with self.path.open("a", newline="", encoding="utf-8") as fh:
             writer = csv.DictWriter(fh, fieldnames=FIELDS)
             if new_file:
@@ -49,7 +70,32 @@ class MetricsLog:
                 "tokens_cache": conv.cache_read_tokens if conv else 0,
                 "costo_estimado_usd": f"{conv.cost_usd if conv else 0.0:.4f}",
                 "conversacion": task.conversation_id,
+                "puesto": task.slot,
+                "imagenes_gemini": images,
             })
+
+    def read(self) -> list[dict[str, str]]:
+        if not self.path.exists():
+            return []
+        with self.path.open(newline="", encoding="utf-8") as fh:
+            return list(csv.DictReader(fh))
+
+
+class LimitLog:
+    """Un renglón por corte de una cuenta por límite de uso (para la pantalla de consumo)."""
+
+    def __init__(self, path: Path):
+        self.path = path
+
+    def append(self, slot: str, engine: str, detected: float, until: float, task_key: str, message: str) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        new_file = _ensure_header(self.path, LIMIT_FIELDS)
+        with self.path.open("a", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=LIMIT_FIELDS)
+            if new_file:
+                writer.writeheader()
+            writer.writerow({"puesto": slot, "motor": engine, "detectado": iso(detected), "hasta": iso(until),
+                             "tarea": task_key, "mensaje": message[:200]})
 
     def read(self) -> list[dict[str, str]]:
         if not self.path.exists():

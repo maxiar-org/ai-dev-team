@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from collections.abc import Iterable, Mapping
 
@@ -26,16 +27,18 @@ from .models import (
     PauseConversation,
     ReleaseOrphan,
     StartTask,
-    engine_from_labels,
+    UnassignableNotice,
     item_key,
-    other_engine,
 )
+from .routing import choose_slot, preferences
 from .state import State
 
 DONE_STATUSES = frozenset({"finished", "error", "stuck"})
 # Estados que solo cuentan como terminados después del período de gracia.
 STALL_STATUSES = frozenset({"idle", "waiting_for_confirmation", "paused"})
 MAX_CONFLICT_ATTEMPTS = 2
+# Terminar antes de empezar: con un puesto libre, primero lo que destraba trabajo ya hecho.
+ROLE_PRIORITY = {"fix": 0, "review": 1, "qa": 2, "dev": 3, "docs": 3}
 CONFLICT_INSTRUCTION = (
     "Este PR tiene conflictos con la rama base. Hacé `git fetch origin` y mergeá `origin/main` en "
     "esta rama, resolvé los conflictos preservando la funcionalidad de ambos lados, corré las "
@@ -83,8 +86,9 @@ def decide(
             actions.append(PauseConversation(task.conversation_id))
             actions.append(FinishTask(task, "timeout", conv))
 
-    # Las tareas que terminan en este ciclo liberan su motor recién en el siguiente.
-    busy_engines = {t.engine for t in state.active.values()}
+    # Las tareas que terminan en este ciclo liberan su puesto recién en el siguiente.
+    # Una tarea vieja, de antes de los puestos, ocupa el puesto con el nombre de su motor.
+    busy_slots = {t.slot or t.engine for t in state.active.values()}
     busy_items = {t.key for t in state.active.values()}
     started_items: set[str] = set()
     for item in items:
@@ -116,15 +120,24 @@ def decide(
             actions.append(EscalateConflict(item))
             started_items.add(item.key)
             continue
-        engine = engine_from_labels(item.labels, cfg.default_dev_engine)
-        conflict_candidates.append(StartTask(item, "fix", engine, "conflict", CONFLICT_INSTRUCTION))
+        conflict_candidates.append(StartTask(item, "fix", "", "conflict", CONFLICT_INSTRUCTION))
+    label_candidates.sort(key=lambda c: (ROLE_PRIORITY[c.role], c.item.repo, c.item.number))
     candidates = [*_comment_candidates(items, comments, state, cfg), *conflict_candidates, *label_candidates]
     for candidate in candidates:
         key = candidate.item.key
-        if candidate.engine in busy_engines or key in busy_items or key in started_items:
+        if key in busy_items or key in started_items:
             continue
-        actions.append(candidate)
-        busy_engines.add(candidate.engine)
+        prefs, waits = preferences(candidate.role, candidate.item.labels, candidate.item.kind)
+        if not any(s.engine in prefs for s in cfg.slots):
+            # Nunca podría arrancar: avisar en vez de saltearla en silencio para siempre.
+            actions.append(UnassignableNotice(candidate.item, candidate.role, candidate.comment_id))
+            started_items.add(key)
+            continue
+        slot = choose_slot(prefs, waits, cfg.slots, busy_slots, state.slot_exhausted_until, now)
+        if slot is None:
+            continue
+        actions.append(dataclasses.replace(candidate, engine=slot.engine, slot=slot.name))
+        busy_slots.add(slot.name)
         started_items.add(key)
     return actions
 
@@ -145,13 +158,12 @@ def _comment_candidates(
         if item is None:
             continue
         if item.kind == "pr":
-            role, default_engine = "fix", cfg.default_dev_engine
+            role = "fix"
         elif item.repo in cfg.docs_only_repos or LABEL_DOCS in item.labels:
-            role, default_engine = "docs", cfg.docs_engine
+            role = "docs"
         else:
-            role, default_engine = "dev", cfg.default_dev_engine
-        engine = engine_from_labels(item.labels, default_engine)
-        out.append(StartTask(item, role, engine, "comment", comment.body, comment.id))
+            role = "dev"
+        out.append(StartTask(item, role, "", "comment", comment.body, comment.id))
     return out
 
 
@@ -163,15 +175,14 @@ def _label_candidates(items: list[Item], cfg: Config) -> list[StartTask]:
             continue
         if item.kind == "pr" and item.draft and labels & {LABEL_REVIEW, LABEL_QA}:
             continue  # un borrador no se revisa ni se prueba: ocuparía un motor sin nada que revisar
-        dev_engine = engine_from_labels(labels, cfg.default_dev_engine)
         if item.kind == "issue" and LABEL_DOCS in labels:
-            out.append(StartTask(item, "docs", engine_from_labels(labels, cfg.docs_engine), "label"))
+            out.append(StartTask(item, "docs", "", "label"))
         elif item.kind == "issue" and LABEL_DEV in labels:
-            out.append(StartTask(item, "dev", dev_engine, "label"))
+            out.append(StartTask(item, "dev", "", "label"))
         elif item.kind == "pr" and LABEL_FIX in labels:
-            out.append(StartTask(item, "fix", dev_engine, "label"))
+            out.append(StartTask(item, "fix", "", "label"))
         elif item.kind == "pr" and LABEL_REVIEW in labels:
-            out.append(StartTask(item, "review", other_engine(dev_engine), "label"))
+            out.append(StartTask(item, "review", "", "label"))
         elif item.kind == "pr" and LABEL_QA in labels:
-            out.append(StartTask(item, "qa", cfg.qa_engine, "label"))
+            out.append(StartTask(item, "qa", "", "label"))
     return out

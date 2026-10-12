@@ -1,5 +1,7 @@
 import json
 
+import httpx
+
 import pytest
 import respx
 
@@ -121,3 +123,19 @@ def test_create_conversation_uses_base_mcp_if_settings_are_unreadable(canvas):
     created = route("POST", "/api/conversations").respond(201, json={"id": ID1})
     canvas.create_conversation("codex", "/p", "Hola")
     assert json.loads(created.calls.last.request.content)["agent_settings"]["mcp_config"] == BASE_MCP_CONFIG
+
+
+@respx.mock
+def test_count_tool_calls_pages_and_counts_distinct_completed_calls(canvas):
+    route("GET", f"/api/conversations/{ID1}/events/search").side_effect = [
+        httpx.Response(200, json={"items": [
+            {"kind": "ACPToolCallEvent", "title": "mcp__image__generate_image", "tool_call_id": "a", "status": "in_progress", "is_error": False},
+            {"kind": "ACPToolCallEvent", "title": "mcp__image__generate_image", "tool_call_id": "a", "status": "completed", "is_error": False},
+        ], "next_page_id": "p2"}),
+        httpx.Response(200, json={"items": [
+            {"kind": "ACPToolCallEvent", "title": "mcp.image.generate_image", "tool_call_id": "b", "status": "completed", "is_error": False},
+            {"kind": "ACPToolCallEvent", "title": "mcp__image__generate_image", "tool_call_id": "c", "status": "completed", "is_error": True},
+            {"kind": "MessageEvent", "title": "generate_image", "tool_call_id": "d", "status": "completed"},
+        ], "next_page_id": None}),
+    ]
+    assert canvas.count_tool_calls(ID1, "generate_image") == 2

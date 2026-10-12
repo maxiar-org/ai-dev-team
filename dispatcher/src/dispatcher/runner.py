@@ -34,6 +34,7 @@ from .models import (
     RemoveLabel,
     RequestReview,
     StartTask,
+    UnassignableNotice,
 )
 from .outcomes import find_pr_for_issue, outcome_for
 from .prompts import build_prompt
@@ -45,7 +46,7 @@ log = logging.getLogger("dispatcher")
 
 class Dispatcher:
     def __init__(self, cfg: Config, github, canvas, workspace, store: StateStore, metrics: MetricsLog,
-                 clock: Callable[[], float] = time.time, board=None):
+                 clock: Callable[[], float] = time.time, board=None, limit_log=None):
         self.cfg = cfg
         self.github = github
         self.canvas = canvas
@@ -54,6 +55,7 @@ class Dispatcher:
         self.metrics = metrics
         self.clock = clock
         self.board = board
+        self.limit_log = limit_log
 
     def run_once(self) -> list[Action]:
         state = self.store.load()
@@ -81,6 +83,8 @@ class Dispatcher:
             if item.kind == "pr" and item.mergeable_state not in (None, "dirty", "unknown"):
                 state.conflict_attempts.pop(item.key, None)
 
+        # Los cortes por límite vencidos se olvidan: el puesto vuelve a estar disponible.
+        state.slot_exhausted_until = {k: v for k, v in state.slot_exhausted_until.items() if v > now}
         actions = decide(items, comments, convs, state, self.cfg, now)
         for action in actions:
             try:
@@ -141,6 +145,17 @@ class Dispatcher:
                 "⚠️ El PR sigue con conflictos después de los intentos automáticos de resolución. "
                 "Revísalo, o comenta con @openhands cómo resolverlos.",
             )
+        elif isinstance(action, UnassignableNotice):
+            item = action.item
+            self.github.add_labels(item.repo, item.number, [LABEL_HUMAN])
+            self.github.comment(
+                item.repo, item.number,
+                f"⚠️ Ningún puesto configurado puede tomar el `{action.role}` de este item: el motor forzado "
+                "no tiene puesto, o el PR no tiene un reviewer de otro motor (revisá los labels `engine:*`). "
+                "Ajustá los labels o `SLOTS`, sacá `needs:human` y volvé a poner el label.",
+            )
+            if action.comment_id is not None:
+                state.processed_comments.add(action.comment_id)
         elif isinstance(action, DocsOnlyNotice):
             item = action.item
             self.github.comment(
@@ -199,6 +214,7 @@ class Dispatcher:
         state.active[item.key] = ActiveTask(
             repo=item.repo, number=item.number, kind=item.kind, role=a.role, engine=a.engine,
             trigger=a.trigger, conversation_id=conv_id, started_at=now, workspace=str(path),
+            slot=a.slot, comment_id=a.comment_id,
         )
         if a.comment_id is not None:
             state.processed_comments.add(a.comment_id)
@@ -230,7 +246,8 @@ class Dispatcher:
         outcome = outcome_for(
             task, a.status, final, labels, pr,
             state.review_rounds.get(task.key, 0), self.cfg.max_review_rounds,
-            qa_rounds=state.qa_rounds.get(task.key, 0),
+            qa_rounds=state.qa_rounds.get(task.key, 0), now=now, tz=self.cfg.limit_tz,
+            limit_streak=state.limit_streak.get(task.key, 0),
         )
         failed = []
         for op in outcome.ops:
@@ -249,11 +266,32 @@ class Dispatcher:
                 )
             except Exception:
                 log.exception("Tampoco pude escalar %s", task.key)
-        # Siempre se libera la tarea: si no, su motor queda bloqueado para siempre.
+        if outcome.limited_until is not None:
+            state.slot_exhausted_until[task.slot or task.engine] = outcome.limited_until
+        if outcome.result == "limite":
+            state.limit_streak[task.key] = state.limit_streak.get(task.key, 0) + 1
+            if task.comment_id is not None:
+                state.processed_comments.discard(task.comment_id)  # el @openhands vuelve a correr
+            if task.trigger == "conflict":
+                state.conflict_attempts[task.key] = max(0, state.conflict_attempts.get(task.key, 1) - 1)
+        else:
+            state.limit_streak.pop(task.key, None)
+        # Siempre se libera la tarea: si no, su puesto queda bloqueado para siempre.
         state.review_rounds[task.key] = outcome.review_rounds
         state.qa_rounds[task.key] = outcome.qa_rounds
+        images = 0
+        if a.conv is not None:
+            try:
+                images = self.canvas.count_tool_calls(task.conversation_id, "generate_image")
+            except Exception:
+                log.warning("No pude contar las imágenes de %s", task.conversation_id)
+        if outcome.limited_until is not None and self.limit_log is not None:
+            try:
+                self.limit_log.append(task.slot or task.engine, task.engine, now, outcome.limited_until, task.key, final)
+            except Exception:
+                log.exception("No pude registrar el corte de %s", task.key)
         try:
-            self.metrics.append(task, a.status, outcome.result, a.conv, now)
+            self.metrics.append(task, a.status, outcome.result, a.conv, now, images=images)
         except Exception:
             # Las métricas nunca deben trabar el flujo: si no se pueden escribir, se registra y se sigue.
             log.exception("No pude registrar las métricas de %s", task.key)
