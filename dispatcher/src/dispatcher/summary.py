@@ -92,21 +92,24 @@ def md_to_html(md: str) -> str:
 
 
 def render_summary(summary: dict | None, error: str | None, now: float) -> str:
-    out = ["<h2>🤖 Resumen del operador</h2>", NOTICE_MARK]
+    last = (summary or {}).get("last")
+    when = (f'<span class="muted">Generado {_fmt(last.get("generated_at"))} · cubre desde {_fmt(last.get("since"))}</span>'
+            if last else "")
+    out = [f'<section class="card" id="resumen" aria-labelledby="h-resumen"><div class="sec-head"><h2 id="h-resumen">Resumen</h2>{when}</div>',
+           NOTICE_MARK]
     if error:
-        out.append(f'<p class="bad">⚠️ sin datos ({escape(error)})</p>')
+        out.append(f'<p class="bad">sin datos ({escape(error)})</p>')
     if summary:
         if summary.get("error"):
-            out.append(f'<p class="bad">⚠️ el último pedido falló: {escape(str(summary["error"])[:300])}</p>')
-        last = summary.get("last")
+            out.append(f'<p class="bad">Atención: el último pedido falló: {escape(str(summary["error"])[:300])}</p>')
         if last:
-            out.append(f'<div class="card"><div class="muted">Generado {_fmt(last.get("generated_at"))} · '
-                       f'cubre desde {_fmt(last.get("since"))}</div>{md_to_html(last.get("markdown", ""))}</div>')
+            out.append(f'<div class="prose">{md_to_html(last.get("markdown", ""))}</div>')
         else:
             out.append('<p class="muted">Todavía no hay resúmenes.</p>')
     if summary and summary.get("status") == "running":
         started = summary.get("started_at") or now
-        out.append(f'<p class="warn">⏳ generando… hace {max(0, int(now - started))} s</p>')
+        out.append(f'<p class="warn">generando… hace {max(0, int(now - started))} s</p>')
     else:
-        out.append('<form method="post" action="/resumen"><button type="submit">Pedir resumen</button></form>')
+        out.append('<form method="post" action="/resumen"><button type="submit" class="btn">Pedir resumen</button></form>')
+    out.append("</section>")
     return "".join(out)

@@ -20,7 +20,8 @@ from .metrics import MetricsLog
 from .models import LABEL_HUMAN
 from .resumen_client import ResumenClient
 from .summary import NOTICE_MARK, period_data
-from .view import AGE_MARK, PRInfo, Snapshot, awaits_human, build_view, render
+from .render import render
+from .view import AGE_MARK, PRInfo, Snapshot, awaits_human, build_view
 from .watchdog import parse_expiry, run_checks
 
 log = logging.getLogger("estado")
@@ -126,7 +127,7 @@ class Page:
                 self.view = view
 
     def body(self, now: float, notice: str | None = None) -> str:
-        aviso = f'<p class="bad">⚠️ {escape(notice[:300])}</p>' if notice else ""
+        aviso = f'<p class="bad">Aviso: {escape(notice[:300])}</p>' if notice else ""
         return self.html.replace(AGE_MARK, str(max(0, int(now - self.generated_at)))).replace(NOTICE_MARK, aviso)
 
 

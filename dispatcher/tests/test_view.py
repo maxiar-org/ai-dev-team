@@ -1,11 +1,12 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
-from dispatcher.models import Item
-from dispatcher.view import AppInfo, PRInfo, Snapshot, View, build_view, merge_order, render
+from dispatcher.models import Item, Slot
+from dispatcher.view import COLUMNS, AppInfo, PRInfo, Snapshot, build_view, merge_order
 from dispatcher.watchdog import Check
 
 NOW = 1_791_500_000.0  # 2026-10-08 aprox.
 
+SLOTS3 = (Slot("claude-senior", "claude", "senior"), Slot("codex-senior", "codex", "senior"), Slot("gemini", "gemini", "senior"))
 
 def pr(n, *labels, body="", ref=None, clean=True, ci="success", files=()):
     return PRInfo("qr", n, f"PR {n}", f"https://github.com/o/qr/pull/{n}", frozenset(labels), body,
@@ -86,40 +87,9 @@ def test_usage_counts_last_24h_and_7d():
     assert "claude" not in u
 
 
-def test_render_sections_and_empty_state():
-    html = render(View(updated=NOW))
-    for title in ("Qué espera de ti", "Trabajo en curso", "Despliegues", "Salud y consumo", "Resumen del operador"):
-        assert title in html
-    assert "Nada pendiente" in html and 'http-equiv="refresh"' in html and "hace __EDAD__ s" in html
-
-
-def test_render_escapes_external_text():
-    v = View(updated=NOW, waiting=[{"repo": "qr", "number": 1, "title": "<script>x</script>", "url": "https://g/1", "ci": "success",
-                                    "clean": True, "preview": None, "issue": None, "warnings": []}])
-    html = render(v)
-    assert "<script>x</script>" not in html and "&lt;script&gt;" in html
-
-
-def test_render_shows_source_errors():
-    assert "sin datos" in render(View(updated=NOW, errors={"coolify": "ConnectError"}))
-
-
-# --- Arreglos de la revisión final ---
-
-def test_null_fields_from_coolify_do_not_break_view():
-    app = AppInfo("img", "", "", "")
-    html = render(build_view(Snapshot(now=NOW, apps=[app])))
-    assert "img" in html
-
-
 def test_usage_skips_truncated_metric_rows():
     rows = [{"motor": None, "inicio": None, "duracion_min": None}, {"motor": "codex"}]
     assert build_view(Snapshot(now=NOW, metrics=rows)).usage == []
-
-
-def test_github_down_never_says_nothing_pending():
-    html = render(build_view(Snapshot(now=NOW, errors={"github": "ConnectError"})))
-    assert "Nada pendiente" not in html and html.count("sin datos") == 2
 
 
 def test_pr_of_issue_still_in_dev_is_not_waiting():
@@ -143,33 +113,9 @@ def test_merge_order_and_overlap_are_per_repo():
     assert all(w["warnings"] == [] for w in build_view(Snapshot(now=NOW, prs=[a, b], issues=issues)).waiting)
 
 
-def test_render_shows_linked_issue_and_dispatcher_error():
-    v = build_view(Snapshot(now=NOW, prs=[pr(10, ref="agent/3-x")], issues=[issue(3)], errors={"dispatcher": "JSONDecodeError"}))
-    html = render(v)
-    assert "https://github.com/maxiar-org/qr/issues/3" in html and "sin datos (JSONDecodeError)" in html
-
-
 def test_preview_template_with_domain_is_skipped():
     app = AppInfo("x", "maxiar-org/qr", "https://qr.maxiar.dev", "running", preview_template="{{pr_id}}.{{domain}}", preview_prs=(10,))
     assert build_view(Snapshot(now=NOW, prs=[pr(10)], apps=[app])).previews == []
-
-
-def test_app_status_traduce_estado_de_coolify():
-    from dispatcher.view import _app_status
-    assert _app_status("running:unknown") == ("ok", "Corriendo (sin healthcheck)")
-    assert _app_status("running:healthy") == ("ok", "Corriendo (sana)")
-    assert _app_status("running:unhealthy") == ("bad", "Corriendo (con fallas)")
-    assert _app_status("exited:unhealthy") == ("bad", "Detenida (con fallas)")
-    assert _app_status("running") == ("ok", "Corriendo")
-    assert _app_status("") == ("bad", "desconocido")
-
-
-from datetime import datetime, timezone
-
-from dispatcher.models import Slot
-from dispatcher.view import COLUMNS
-
-SLOTS3 = (Slot("claude-senior", "claude", "senior"), Slot("codex-senior", "codex", "senior"), Slot("gemini", "gemini", "senior"))
 
 
 def ts(h):

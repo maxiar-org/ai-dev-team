@@ -2,7 +2,8 @@ from pathlib import Path
 
 from dispatcher.estado import Collector, Page, handle_post, refresh_summary
 from dispatcher.models import Item
-from dispatcher.view import Snapshot, View, build_view, render
+from dispatcher.render import render
+from dispatcher.view import Snapshot, View, build_view
 
 
 class GH:

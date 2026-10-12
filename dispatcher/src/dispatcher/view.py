@@ -6,7 +6,6 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from html import escape
 from zoneinfo import ZoneInfo
 
 from .config import DEFAULT_SLOTS
@@ -377,101 +376,3 @@ def build_view(snap: Snapshot) -> View:
 
 
 AGE_MARK = "__EDAD__"  # el servidor lo reemplaza por los segundos desde la recolección
-
-CSS = """
-:root{color-scheme:dark}body{font:15px/1.45 -apple-system,system-ui,sans-serif;background:#0d1117;color:#e6edf3;margin:0;padding:14px;max-width:760px;margin:auto}
-h1{font-size:20px;margin:4px 0 2px}h2{font-size:16px;margin:22px 0 8px;border-bottom:1px solid #30363d;padding-bottom:4px}
-.muted{color:#8b949e;font-size:13px}.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px 12px;margin:8px 0}
-.urgent{border-color:#d29922}a{color:#58a6ff;text-decoration:none}.ok{color:#3fb950}.bad{color:#f85149}.warn{color:#d29922}
-table{width:100%;border-collapse:collapse;font-size:14px}td{padding:4px 2px;border-bottom:1px solid #21262d;vertical-align:top}
-button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #30363d;background:#238636;color:#fff}
-.tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:10px;background:#21262d;margin-left:4px}
-"""
-
-
-_APP_STATES = {"running": "Corriendo", "exited": "Detenida", "restarting": "Reiniciando", "starting": "Arrancando",
-               "degraded": "Degradada", "stopped": "Detenida"}
-_APP_HEALTH = {"healthy": "sana", "unhealthy": "con fallas", "unknown": "sin healthcheck"}
-
-
-def _app_status(status: str) -> tuple[str, str]:
-    """Traduce el estado de Coolify (`<estado>:<salud>`, p. ej. `running:unknown`) a clase CSS y texto legible."""
-    state, _, health = status.partition(":")
-    ok = state == "running" and health != "unhealthy"
-    text = _APP_STATES.get(state, state or "desconocido")
-    if health:
-        text += f" ({_APP_HEALTH.get(health, health)})"
-    return ("ok" if ok else "bad"), text
-
-
-def _a(url: str | None, text: str) -> str:
-    return f'<a href="{escape(url or "#", quote=True)}">{escape(text)}</a>' if url else escape(text)
-
-
-def _err(view: View, section: str) -> str:
-    return f'<p class="bad">⚠️ sin datos ({escape(view.errors[section])})</p>' if section in view.errors else ""
-
-
-def render(view: View) -> str:
-    from .summary import render_summary  # import diferido: summary no depende de view, pero así queda a salvo de ciclos
-
-    reload_s = 10 if (view.summary or {}).get("status") == "running" else 60
-    out = [f'<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-           f'<meta http-equiv="refresh" content="{reload_s}"><title>Estado · AI Dev Team</title><style>{CSS}</style></head><body>',
-           f'<h1>AI Dev Team</h1><div class="muted">Actualizado hace {AGE_MARK} s · se recarga sola</div>']
-    # 1. Qué espera de ti
-    out.append("<h2>🔔 Qué espera de ti</h2>")
-    out.append(_err(view, "github"))
-    if "github" not in view.errors and not (view.waiting or view.human or view.alerts or view.tokens):
-        out.append('<p class="ok">Nada pendiente 🎉</p>')
-    for i, w in enumerate(view.waiting, 1):
-        ci = {"success": '<span class="ok">CI ✓</span>', "failure": '<span class="bad">CI ✗</span>',
-              "pending": '<span class="warn">CI …</span>'}.get(w["ci"], "")
-        conflict = "" if w["clean"] else '<span class="warn">conflictos</span>'
-        preview = f' · {_a(w["preview"], "preview")}' if w["preview"] else ""
-        issue = f' · {_a(w.get("issue_url"), f"issue #{w["issue"]}")}' if w.get("issue") else ""
-        warns = "".join(f'<div class="warn">⚠️ {escape(x)}</div>' for x in w["warnings"])
-        out.append(f'<div class="card urgent"><b>{i}.</b> {_a(w["url"], f"{w["repo"]} #{w["number"]}: {w["title"]}")}'
-                   f'<div class="muted">Revisar y mergear{issue} · {ci} {conflict}{preview}</div>{warns}</div>')
-    for h in view.human:
-        note = f'<div class="muted">{escape(h["note"][:300])}</div>' if h["note"] else ""
-        out.append(f'<div class="card urgent">🙋 {_a(h["url"], f"{h["repo"]} #{h["number"]}: {h["title"]}")} '
-                   f'<span class="tag">needs:human</span>{note}</div>')
-    for a in view.alerts:
-        out.append(f'<div class="card urgent">🚨 {_a(a["url"], a["title"])}</div>')
-    for t in view.tokens:
-        out.append(f'<div class="card urgent">🔑 {escape(t)}</div>')
-    # 2. Trabajo en curso
-    out.append("<h2>🛠️ Trabajo en curso</h2>")
-    out.append(_err(view, "github"))
-    out.append(_err(view, "dispatcher"))
-    for repo, rows in sorted(view.work.items()):
-        out.append(f'<div class="card"><b>{escape(repo)}</b><table>')
-        for r in rows:
-            out.append(f'<tr><td>{_a(r["url"], f"#{r["number"]} {r["title"]}")}</td><td class="muted">{escape(r["stage"])}</td></tr>')
-        out.append("</table></div>")
-    # 3. Despliegues
-    out.append("<h2>🚀 Despliegues</h2>")
-    out.append(_err(view, "coolify"))
-    for a in view.apps:
-        ok, status = _app_status(a.status)
-        out.append(f'<div class="card">{_a(a.url, a.name)} <span class="{ok}" title="{escape(a.status)}">{escape(status)}</span>'
-                   f'<div class="muted">Último deploy: {escape(a.last_deploy or "—")} ({escape(a.last_deploy_status or "—")})</div></div>')
-    for p in view.previews:
-        out.append(f'<div class="card">🔎 Preview {_a(p["url"], f"{p["repo"]} PR #{p["number"]}")}</div>')
-    # 4. Salud y consumo
-    out.append("<h2>🩺 Salud y consumo</h2>")
-    out.append(_err(view, "salud"))
-    out.append('<div class="card"><table>' + "".join(
-        f'<tr><td>{escape(c.name)}</td><td class="{"ok" if c.ok else "bad"}">{"OK" if c.ok else "FALLA"}</td>'
-        f'<td class="muted">{escape(c.detail)}</td></tr>' for c in view.health) + "</table></div>")
-    if view.usage:
-        out.append('<div class="card"><table><tr><td></td><td class="muted">24 h</td><td class="muted">7 días</td></tr>' + "".join(
-            f'<tr><td>{escape(u["engine"])}</td><td>{u["tasks_24h"]} tareas · {u["minutes_24h"]:.0f} min</td>'
-            f'<td>{u["tasks_7d"]} tareas · {u["minutes_7d"]:.0f} min</td></tr>' for u in view.usage) + "</table></div>")
-    else:
-        out.append('<p class="muted">Sin tareas en los últimos 7 días.</p>')
-    # 5. Resumen del operador (a pedido)
-    out.append(render_summary(view.summary, view.errors.get("resumen"), view.updated))
-    out.append("</body></html>")
-    return "".join(out)
