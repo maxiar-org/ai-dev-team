@@ -7,9 +7,13 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from html import escape
+from zoneinfo import ZoneInfo
 
+from .config import DEFAULT_SLOTS
 from .decide import parse_dependencies
-from .models import CLOSES_RE, LABEL_DEV, LABEL_DOCS, LABEL_FIX, LABEL_HUMAN, LABEL_QA, LABEL_REVIEW, LABEL_WORKING, Item
+from .models import CLOSES_RE, LABEL_DEV, LABEL_DOCS, LABEL_FIX, LABEL_HUMAN, LABEL_QA, LABEL_REVIEW, LABEL_WORKING, Item, Slot
+from .team_report import (DAY, clean_limits, clean_metrics, daily_hours, decision_alerts, flow_times, hour_strip,
+                          project_costs, rework_per_issue, slot_stats)
 from .watchdog import Check
 
 
@@ -27,6 +31,9 @@ class AppInfo:
 
 AGENT_LABELS = frozenset({LABEL_WORKING, LABEL_REVIEW, LABEL_FIX, LABEL_QA})
 ROLE_NAMES = {"dev": "dev", "review": "review", "qa": "QA", "fix": "fix", "docs": "docs"}
+LABEL_EPIC = "epic"
+COLUMNS = ("Por hacer", "Dev", "Review", "QA", "Fix", "Te espera")
+RANGES = (7, 30)
 
 
 @dataclass(frozen=True)
@@ -59,6 +66,18 @@ class Snapshot:
     human_notes: dict[str, str] = field(default_factory=dict)
     summary: dict | None = None
     errors: dict[str, str] = field(default_factory=dict)
+    repos: tuple[str, ...] = ()
+    limits: list[dict[str, str]] = field(default_factory=list)
+    slots: tuple[Slot, ...] = DEFAULT_SLOTS
+    slot_costs: dict[str, float] = field(default_factory=dict)
+    slot_labels: dict[str, str] = field(default_factory=dict)
+    exhausted: dict[str, float] = field(default_factory=dict)
+    closed: list[dict] = field(default_factory=list)
+    merged: list[dict] = field(default_factory=list)
+    image_usd: float = 0.04
+    tz: str = "America/Argentina/Buenos_Aires"
+    repo_projects: dict[str, list[dict]] = field(default_factory=dict)
+    health_links: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -75,6 +94,11 @@ class View:
     usage: list[dict] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
     summary: dict | None = None
+    slots: list[dict] = field(default_factory=list)
+    projects: list[dict] = field(default_factory=list)
+    credentials: list[dict] = field(default_factory=list)
+    budget: dict[str, dict] = field(default_factory=dict)
+    health_links: dict[str, str] = field(default_factory=dict)
 
 
 def issue_of(pr: PRInfo) -> int | None:
@@ -169,6 +193,107 @@ def _usage(rows: list[dict[str, str]], now: float) -> list[dict]:
     return [{"engine": k, **v} for k, v in sorted(acc.items())]
 
 
+def zone(name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _age(now: float, iso_text: str) -> float | None:
+    try:
+        return max(0.0, now - datetime.fromisoformat(iso_text).timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+def _hhmm(ts: float, tz: ZoneInfo) -> str:
+    return datetime.fromtimestamp(ts, tz).strftime("%H:%M")
+
+
+def _column(stage: str) -> str:
+    if stage in ("necesita a Eduardo", "espera a Eduardo"):
+        return "Te espera"
+    head = stage.split(" ", 1)[0]
+    return {"fix": "Fix", "QA": "QA", "review": "Review", "dev": "Dev", "docs": "Dev"}.get(head, "Por hacer")
+
+
+def _slot_cards(snap: Snapshot, rows: list, limits: list) -> list[dict]:
+    tz, now = zone(snap.tz), snap.now
+    day = slot_stats(rows, limits, snap.slots, {}, 0.0, now, DAY)
+    week = slot_stats(rows, limits, snap.slots, {}, 0.0, now, 7 * DAY)
+    cards = []
+    for s in snap.slots:
+        task = next(((k, t) for k, t in snap.active.items() if t.get("slot") == s.name), None)
+        until = snap.exhausted.get(s.name, 0.0)
+        active_since = None
+        if task:
+            key, t = task
+            active_since = float(t.get("started_at", now))
+            status, status_text = "trabajando", "Trabajando"
+            role = ROLE_NAMES.get(t.get("role"), t.get("role"))
+            detail = f"{role} de {key.replace('#', ' #')} · hace {int((now - active_since) // 60)} min"
+        else:
+            status, status_text = ("sin_cupo", f"Sin cupo hasta {_hhmm(until, tz)}") if until > now else ("libre", "Libre")
+            done = [r for r in rows if r.get("puesto") == s.name]
+            if done:
+                last = max(done, key=lambda r: r["inicio"])
+                end = datetime.fromisoformat(last.get("fin") or last["inicio"]).timestamp()
+                role = ROLE_NAMES.get(last["rol"], last["rol"])
+                detail = f"Terminó {role} de {last['repo']} #{last['numero']} a las {_hhmm(end, tz)}"
+            else:
+                detail = "Sin tareas registradas"
+        strip = hour_strip(rows, limits, s.name, now, active_since, until if until > now else None)
+        cells = [{"state": st, "title": f"{_hhmm(now - DAY + i * 3600, tz)} · {st.replace('_', ' ')}"}
+                 for i, st in enumerate(strip)]
+        hits = week[s.name].limit_hits
+        footer = f"Uso en 7 días: {week[s.name].utilization:.0%} · {hits} {'corte' if hits == 1 else 'cortes'} en 7 días"
+        if s.engine == "gemini":
+            imgs = sum(int(r.get("imagenes_gemini") or 0) for r in rows if r.get("puesto") == s.name
+                       and now - datetime.fromisoformat(r["inicio"]).timestamp() <= DAY)
+            footer += f" · {imgs} imágenes en 24 h (USD {imgs * snap.image_usd:.2f})".replace(".", ",")
+        cards.append({"name": s.name, "engine": s.engine, "label": snap.slot_labels.get(s.name) or f"{s.engine} · {s.tier}",
+                      "status": status, "status_text": status_text, "detail": detail, "cells": cells,
+                      "tasks": day[s.name].tasks, "hours": round(day[s.name].minutes / 60, 2),
+                      "exhausted": round(day[s.name].exhausted_hours, 2), "footer": footer})
+    return cards
+
+
+def _budget(snap: Snapshot, rows: list, limits: list, days: int) -> dict:
+    window, now = days * DAY, snap.now
+    start = now - window
+    stats = slot_stats(rows, limits, snap.slots, snap.slot_costs, snap.image_usd, now, window)
+    in_window = [r for r in rows if datetime.fromisoformat(r["inicio"]).timestamp() >= start]
+    images = sum(int(r.get("imagenes_gemini") or 0) for r in in_window)
+    closed = [c for c in snap.closed if LABEL_EPIC not in (c.get("labels") or [])
+              and (_age(now, c.get("closed_at")) or window + 1) <= window]
+    cost = sum(s.cost_usd for s in stats.values())
+    by_project = []
+    for repo, pc in sorted(project_costs(rows, snap.slots, snap.slot_costs, snap.image_usd, now, window).items(),
+                           key=lambda kv: -kv[1]["cost"]):
+        n = sum(1 for c in closed if c.get("repo") == repo)
+        by_project.append({"repo": repo, "hours": round(pc["minutes"] / 60, 2), "images": pc["images"], "cost": pc["cost"],
+                           "closed": n, "cost_per_issue": pc["cost"] / n if n else None})
+    return {
+        "days": days,
+        "cost": cost,
+        "fixed": sum(snap.slot_costs.get(s.name, 0.0) for s in snap.slots) * window / (30 * DAY),
+        "images": images,
+        "image_cost": images * snap.image_usd,
+        "closed": len(closed),
+        "cost_per_issue": cost / len(closed) if closed else None,
+        "rework": rework_per_issue(in_window),
+        "cuts": sum(1 for r in limits if datetime.fromisoformat(r["detectado"]).timestamp() >= start),
+        "exhausted_hours": round(sum(s.exhausted_hours for s in stats.values()), 2),
+        "daily": daily_hours(rows, [s.name for s in snap.slots], now, days, zone(snap.tz)),
+        "exhausted": [{"slot": s.name, "engine": s.engine, "hours": round(stats[s.name].exhausted_hours, 2),
+                       "cuts": stats[s.name].limit_hits} for s in snap.slots],
+        "flow": flow_times(snap.merged, rows, now, window),
+        "alerts": decision_alerts(limits, rows, snap.slots, now),
+        "by_project": by_project,
+    }
+
+
 def build_view(snap: Snapshot) -> View:
     v = View(updated=snap.now, apps=snap.apps, health=snap.checks, errors=dict(snap.errors), summary=snap.summary)
     working = {(i.repo, i.number) for i in snap.issues if LABEL_WORKING in i.labels}
@@ -189,12 +314,13 @@ def build_view(snap: Snapshot) -> View:
         v.waiting.append({"repo": p.repo, "number": p.number, "title": p.title, "url": p.url, "ci": p.ci,
                           "clean": p.mergeable_state != "dirty", "preview": _preview(p, snap.apps, snap.org),
                           "issue": iss, "issue_url": f"https://github.com/{snap.org}/{p.repo}/issues/{iss}" if iss else None,
-                          "warnings": warnings})
+                          "warnings": warnings, "age": _age(snap.now, p.updated_at)})
     for it in [*snap.issues, *snap.prs]:
         if LABEL_HUMAN in it.labels:
             url = it.url if isinstance(it, PRInfo) else f"https://github.com/{snap.org}/{it.repo}/issues/{it.number}"
             v.human.append({"repo": it.repo, "number": it.number, "title": it.title, "url": url,
-                            "note": snap.human_notes.get(f"{it.repo}#{it.number}", "")})
+                            "note": snap.human_notes.get(f"{it.repo}#{it.number}", ""), "age": _age(snap.now, it.updated_at),
+                            "kind": "pr" if isinstance(it, PRInfo) else "issue"})
     v.alerts = [{"title": t, "url": u} for _, t, u in snap.ops]
     today = datetime.fromtimestamp(snap.now, tz=timezone.utc).date()
     for name, exp in sorted(snap.expiries.items()):
@@ -202,11 +328,14 @@ def build_view(snap: Snapshot) -> View:
             v.tokens.append(f"{name} vence el {exp.isoformat()} (en {(exp - today).days} días)")
     open_issues = {(i.repo, i.number) for i in snap.issues}
     for it in sorted([*snap.issues, *snap.prs], key=lambda x: (x.repo, x.number)):
+        if LABEL_EPIC in it.labels:
+            continue
         kind = "pr" if isinstance(it, PRInfo) else "issue"
         deps = [d for d in parse_dependencies(it.body) if (it.repo, d) in open_issues] if kind == "issue" else []
         stage = _stage(it.labels, kind, snap.active.get(f"{it.repo}#{it.number}"), deps, snap.now)
         url = it.url if isinstance(it, PRInfo) else f"https://github.com/{snap.org}/{it.repo}/issues/{it.number}"
-        v.work.setdefault(it.repo, []).append({"number": it.number, "kind": kind, "title": it.title, "url": url, "stage": stage})
+        v.work.setdefault(it.repo, []).append({"number": it.number, "kind": kind, "title": it.title, "url": url,
+                                               "stage": stage, "column": _column(stage)})
     open_prs = {(p.repo, p.number) for p in snap.prs}
     for a in snap.apps:
         repo = a.repo.split("/")[-1]
@@ -215,6 +344,35 @@ def build_view(snap: Snapshot) -> View:
             if (repo, n) in open_prs and url:
                 v.previews.append({"repo": repo, "number": n, "url": url})
     v.usage = _usage(snap.metrics, snap.now)
+    for name, exp in sorted(snap.expiries.items()):
+        if exp is None:
+            continue
+        days = (exp - today).days
+        level = "critico" if days < 7 else "advertencia" if days <= 30 else "ok"
+        text = f"vencido hace {-days} días" if days < 0 else f"vence en {days} días ({exp.isoformat()})"
+        v.credentials.append({"name": name, "level": level, "text": text})
+    repos = list(snap.repos) or sorted(v.work)
+    for repo in repos:
+        epics = sorted((i for i in snap.issues if i.repo == repo and LABEL_EPIC in i.labels and i.sub_issues),
+                       key=lambda i: i.number)
+        epic = None
+        if epics:
+            e = epics[0]
+            epic = {"number": e.number, "title": e.title, "url": f"https://github.com/{snap.org}/{repo}/issues/{e.number}",
+                    "done": e.sub_issues[0], "total": e.sub_issues[1]}
+        items = v.work.get(repo, [])
+        counts = dict.fromkeys(COLUMNS, 0)
+        for w in items:
+            counts[w["column"]] += 1
+        sites = [{"name": a.name, "url": a.url, "status": a.status} for a in snap.apps
+                 if a.repo in (f"{snap.org}/{repo}", repo) and a.url]
+        v.projects.append({"repo": repo, "url": f"https://github.com/{snap.org}/{repo}",
+                           "views": list(snap.repo_projects.get(repo, [])), "sites": sites,
+                           "epic": epic, "counts": counts, "items": items})
+    rows, limits = clean_metrics(snap.metrics), clean_limits(snap.limits)
+    v.slots = _slot_cards(snap, rows, limits)
+    v.budget = {str(d): _budget(snap, rows, limits, d) for d in RANGES}
+    v.health_links = dict(snap.health_links)
     return v
 
 
