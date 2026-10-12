@@ -4,6 +4,9 @@ services:
   canvas:
     build: ./canvas
     image: ai-dev-team/canvas:1.24.0
+    # Hostname fijo: Gemini CLI cifra su login con una clave derivada del hostname. Con el hostname
+    # aleatorio de Docker, el login se pierde en cada recreación del contenedor.
+    hostname: ai-dev-team-canvas
     restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"
