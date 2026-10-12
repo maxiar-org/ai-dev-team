@@ -75,3 +75,17 @@ def test_invalid_slots_are_rejected(value):
 def test_heartbeat_path_default_and_disable():
     assert str(Config.from_env(BASE).heartbeat_path) == "/state/heartbeat"
     assert Config.from_env({**BASE, "HEARTBEAT_PATH": ""}).heartbeat_path is None
+
+
+from dispatcher.config import parse_slot_costs, parse_slot_labels, parse_slots
+from dispatcher.models import Slot
+
+
+def test_slot_parsers_are_shared_with_estado():
+    env = {"SLOTS": "claude-senior:claude:senior,gemini:gemini:senior", "SLOT_COST_CLAUDE_SENIOR": "100",
+           "SLOT_LABEL_CLAUDE_SENIOR": "Claude Max 5x · arquitectura"}
+    slots = parse_slots(env)
+    assert slots == (Slot("claude-senior", "claude", "senior"), Slot("gemini", "gemini", "senior"))
+    assert parse_slot_costs(env, slots) == {"claude-senior": 100.0}
+    assert parse_slot_labels(env, slots) == {"claude-senior": "Claude Max 5x · arquitectura"}
+    assert parse_slots({}) == (Slot("claude", "claude", "senior"), Slot("codex", "codex", "senior"))
