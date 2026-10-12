@@ -54,7 +54,7 @@ def test_docs_only_repos():
 def test_default_slots_keep_one_per_current_engine():
     cfg = Config.from_env(BASE)
     assert cfg.slots == (Slot("claude", "claude", "senior"), Slot("codex", "codex", "senior"))
-    assert (cfg.limit_tz, cfg.gemini_image_usd, cfg.slot_costs) == ("America/Argentina/Buenos_Aires", 0.04, {})
+    assert (cfg.limit_tz, cfg.gemini_image_usd, cfg.slot_costs) == ("UTC", 0.04, {})
 
 
 def test_slots_and_costs_from_env():
