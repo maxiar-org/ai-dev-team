@@ -114,7 +114,7 @@ Una función pura toma el texto y devuelve "es un límite" y "hasta cuándo".
 
 1. El puesto queda **agotado hasta** esa hora, guardado en `state.json` (`slot_exhausted_until`).
 2. La tarea **vuelve a la fila** con su label disparador original. No se pone `needs:human` y no cuenta como una ronda de review o QA. El agente que la retome sigue sobre la misma rama y el mismo PR.
-3. **Un solo comentario** en el issue o PR: "`<puesto>` sin cupo hasta HH:MM; sigue `<otro>`" o "…; espera el reinicio".
+3. **Un solo comentario** en el issue o PR: "`<puesto>` se quedó sin cupo (hasta las HH:MM UTC); la tarea vuelve a la fila". Es genérico, porque al terminar la tarea todavía no se sabe qué puesto la va a retomar.
 4. **Nunca se asigna** una tarea a un puesto agotado.
 5. **Si los patrones no reconocen el error,** se escala como hoy (`needs:human` con la respuesta citada), y el patrón nuevo se suma después.
 

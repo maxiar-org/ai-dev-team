@@ -100,6 +100,7 @@ Guía para incorporar un proyecto al AI Dev Team y para saber **dónde va cada c
 - [ ] **Tablero de GitHub Projects** (`<PROYECTO> Roadmap`), con vista Kanban por estado y vista por milestone. Requiere el permiso `project` en `gh` (`gh auth refresh -s project -h github.com`).
 - [ ] **Mockups recortados:** si el proyecto los tiene, recortar cada pantalla en `assets/mockups/screens/` y citar la referencia en cada issue de UI. Pedir en el PR la comparación lado a lado y tests de golden.
 - [ ] Issues chicos, cada uno con **criterios de aceptación**, **Entregable visible**, **Fuera de alcance** y **Depende de #N**.
+- [ ] Ponerle a cada issue `size:S`, `size:M` o `size:L`, `kind:architecture` a las decisiones técnicas y `needs:images` a las tareas con imágenes. `engine:*` solo para forzar el motor (ver "Puestos del equipo" en el README).
 - [ ] `engine:claude` o `engine:codex` cuando importe el motor (por ejemplo, diseño con skills o imágenes).
 - [ ] Empezar con 1 o 2 issues con `agent:dev`, para ver cómo trabajan los agentes con el proyecto antes de cargar el resto.
 
