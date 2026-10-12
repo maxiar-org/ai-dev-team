@@ -1,5 +1,6 @@
 from dispatcher.summary import NOTICE_MARK, md_to_html, period_data, render_summary
-from dispatcher.view import AppInfo, View, render
+from dispatcher.render import render
+from dispatcher.view import AppInfo, View
 from dispatcher.watchdog import Check
 
 NOW = 1_791_500_000.0
@@ -45,8 +46,8 @@ def test_render_summary_states():
 
 def test_page_reloads_faster_while_generating():
     v = View(updated=NOW, summary={"status": "running", "since": "x", "started_at": NOW, "last": None, "error": None})
-    assert 'content="10"' in render(v)
-    assert 'content="60"' in render(View(updated=NOW))
+    assert 'location.reload()},10000)' in render(v)
+    assert 'location.reload()},60000)' in render(View(updated=NOW))
 
 
 def test_running_age_never_negative():

@@ -4,12 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime
+import re
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 
-from .models import Comment, Item
+from .models import CLOSES_RE, Comment, Item
+
+REPO_NAME = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+
+def _sub_issues(summary: dict | None) -> tuple[int, int] | None:
+    total = (summary or {}).get("total") or 0
+    return (int(summary.get("completed") or 0), int(total)) if total else None
 
 
 class GitHubClient:
@@ -65,6 +73,8 @@ class GitHubClient:
                     head_ref=heads.get(raw["number"]) if is_pr else None,
                     node_id=raw.get("node_id", ""),
                     draft=raw["number"] in drafts,
+                    updated_at=raw.get("updated_at") or "",
+                    sub_issues=_sub_issues(raw.get("sub_issues_summary")),
                 )
             )
         return items
@@ -178,6 +188,28 @@ class GitHubClient:
     def search_since(self, query: str) -> list[dict]:
         resp = self.http.get("/search/issues", params={"q": query, "per_page": 100})
         resp.raise_for_status()
-        return [{"repo": i["repository_url"].rsplit("/", 1)[-1], "number": i["number"], "title": i["title"],
-                 "url": i["html_url"], "closed_at": i.get("closed_at"), "state": i.get("state")}
-                for i in resp.json().get("items", [])]
+        out = []
+        for i in resp.json().get("items", []):
+            closes = CLOSES_RE.search(i.get("body") or "")
+            out.append({"repo": i["repository_url"].rsplit("/", 1)[-1], "number": i["number"], "title": i["title"],
+                        "url": i["html_url"], "closed_at": i.get("closed_at"), "state": i.get("state"),
+                        "created_at": i.get("created_at"), "merged_at": (i.get("pull_request") or {}).get("merged_at"),
+                        "closes": int(closes.group(1)) if closes else None,
+                        "labels": [label["name"] for label in i.get("labels") or []]})
+        return out
+
+    def repo_projects(self, repos: list[str]) -> dict[str, list[dict]]:
+        """Vistas de GitHub Projects vinculadas a cada repo, sin las cerradas: {repo: [{"title", "url"}]}."""
+        valid = [r for r in repos if REPO_NAME.match(r)]
+        if not valid:
+            return {}
+        fields = " ".join(f'r{i}: repository(owner: $org, name: "{r}") {{ projectsV2(first: 10) {{ nodes {{ title url closed }} }} }}'
+                          for i, r in enumerate(valid))
+        resp = self.http.post("/graphql", json={"query": f"query($org: String!) {{ {fields} }}", "variables": {"org": self.org}})
+        resp.raise_for_status()
+        data = resp.json().get("data") or {}
+        out: dict[str, list[dict]] = {}
+        for i, r in enumerate(valid):
+            nodes = ((data.get(f"r{i}") or {}).get("projectsV2") or {}).get("nodes") or []
+            out[r] = [{"title": n["title"], "url": n["url"]} for n in nodes if n and not n.get("closed")]
+        return out

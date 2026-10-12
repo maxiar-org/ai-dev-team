@@ -2,7 +2,8 @@ from pathlib import Path
 
 from dispatcher.estado import Collector, Page, handle_post, refresh_summary
 from dispatcher.models import Item
-from dispatcher.view import Snapshot, View, build_view, render
+from dispatcher.render import render
+from dispatcher.view import Snapshot, View, build_view
 
 
 class GH:
@@ -72,7 +73,7 @@ def test_refresh_shows_error_page_instead_of_freezing():
     page = Page()
     page.update("<p>vieja</p>", generated_at=0.0)
     refresh(page, Boom(), now=50.0)
-    assert "vieja" not in page.html and "ValueError" in page.html and page.generated_at == 50.0
+    assert "vieja" not in page.body(50.0) and "ValueError" in page.body(50.0) and page.generated_at == 50.0
 
 
 ORIGIN = "https://estado.maxiar.dev"
@@ -114,14 +115,14 @@ def test_post_rejects_foreign_origin():
 
 def test_post_sends_period_data_and_shows_running():
     r, page = FakeResumen(), page_with_view()
-    assert handle_post(page, PeriodCollector(), r, ORIGIN, ORIGIN, 1000.0) == (303, "/")
+    assert handle_post(page, PeriodCollector(), r, ORIGIN, ORIGIN, 1000.0) == (303, "/#resumen")
     assert r.sent[0]["desde"] == "2026-10-08T00:00:00Z" and r.sent[0]["mergeados"] == [{"number": 23}]
     assert "generando" in page.body(now=1000.0)
 
 
 def test_post_when_already_running_does_not_resend():
     r = FakeResumen(status="running")
-    assert handle_post(page_with_view(), PeriodCollector(), r, ORIGIN, ORIGIN, 1000.0) == (303, "/") and r.sent == []
+    assert handle_post(page_with_view(), PeriodCollector(), r, ORIGIN, ORIGIN, 1000.0) == (303, "/#resumen") and r.sent == []
 
 
 def test_post_when_operator_down_redirects_with_error():
@@ -188,3 +189,95 @@ def test_period_searches_always_include_is_issue_or_is_pr(tmp_path):
     c.period("2026-10-08T00:00:00Z")
     assert len(gh.queries) == 3
     assert all(" is:issue " in f" {q} " or " is:pr " in f" {q} " for q in gh.queries)  # GitHub responde 422 si falta
+
+
+import json
+
+from dispatcher.estado import refresh
+from dispatcher.metrics import LimitLog
+from dispatcher.models import Slot
+
+
+class SearchGH(GH):
+    def __init__(self, fail=False):
+        self.calls, self.fail = 0, fail
+
+    def search_since(self, query):
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("search caído")
+        if "is:pr" in query:
+            return [{"repo": "qr", "number": 9, "created_at": "2026-10-12T01:00:00Z", "merged_at": "2026-10-12T03:00:00Z", "closes": 1}]
+        return [{"repo": "qr", "number": 1, "closed_at": "2026-10-12T03:00:00Z", "labels": []}]
+
+    def repo_projects(self, repos):
+        return {"qr": [{"title": "QR Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/2"}]}
+
+
+def collector(tmp_path, gh, **kw):
+    return Collector(gh, None, repos=("qr",), org="maxiar-org", bot_login="bot", ops_repo="ai-dev-team",
+                     state_path=tmp_path / "state.json", metrics_path=tmp_path / "m.csv", checker=lambda: [], expiries={},
+                     limits_path=tmp_path / "limits.csv", **kw)
+
+
+def test_collector_reads_exhaustion_limits_and_slots(tmp_path):
+    (tmp_path / "state.json").write_text(json.dumps({"active": {}, "slot_exhausted_until": {"gemini": 1234.5}}))
+    LimitLog(tmp_path / "limits.csv").append("gemini", "gemini", 900.0, 1234.5, "qr#1", "429")
+    slots = (Slot("gemini", "gemini", "senior"),)
+    snap = collector(tmp_path, SearchGH(), slots=slots, slot_costs={"gemini": 20.0}, slot_labels={"gemini": "Gemini Pro"},
+                     tz="UTC", health_links={"canvas": "https://canvas.x"}).collect(now=1000.0)
+    assert snap.repo_projects == {"qr": [{"title": "QR Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/2"}]}
+    assert snap.health_links == {"canvas": "https://canvas.x"}
+    assert snap.exhausted == {"gemini": 1234.5} and len(snap.limits) == 1 and snap.repos == ("qr",)
+    assert (snap.slots, snap.slot_costs, snap.slot_labels, snap.tz) == (slots, {"gemini": 20.0}, {"gemini": "Gemini Pro"}, "UTC")
+    assert [m["number"] for m in snap.merged] == [9] and [c["number"] for c in snap.closed] == [1]
+
+
+def test_period_searches_are_cached(tmp_path):
+    gh = SearchGH()
+    c = collector(tmp_path, gh)
+    c.collect(now=1000.0)
+    c.collect(now=1500.0)
+    assert gh.calls == 2
+    c.collect(now=1700.0)
+    assert gh.calls == 4
+
+
+def test_period_cache_survives_search_error(tmp_path):
+    gh = SearchGH()
+    c = collector(tmp_path, gh)
+    c.collect(now=1000.0)
+    gh.fail = True
+    snap = c.collect(now=2000.0)
+    assert "consumo" in snap.errors and [m["number"] for m in snap.merged] == [9]
+
+
+def test_parse_health_links():
+    from dispatcher.estado import parse_health_links
+    assert parse_health_links(" Canvas=https://canvas.x , coolify=https://c.x,mal=http://y,sinigual") == {
+        "canvas": "https://canvas.x", "coolify": "https://c.x"}
+    assert parse_health_links("") == {}
+
+
+def test_post_redirects_to_summary_anchor():
+    r, page = FakeResumen(), page_with_view()
+    assert handle_post(page, PeriodCollector(), r, ORIGIN, ORIGIN, 1000.0) == (303, "/#resumen")
+    code, loc = handle_post(page_with_view(), PeriodCollector(), FakeResumen(fail=True), ORIGIN, ORIGIN, 1000.0)
+    assert loc.startswith("/?error=") and loc.endswith("#resumen")
+
+
+def test_unknown_rango_falls_back_to_7():
+    page = Page()
+    page.update({"7": "siete", "30": "treinta"}, 1000.0)
+    assert page.body(1000.0, rango="30") == "treinta" and page.body(1000.0, rango="x") == "siete"
+    page.update("solo", 1000.0)
+    assert page.body(1000.0, rango="30") == "solo"
+
+
+def test_api_returns_view_json(tmp_path):
+    page = Page()
+    assert page.api()[0] == 503
+    refresh(page, collector(tmp_path, SearchGH(), tz="UTC"), 1000.0)
+    code, body = page.api()
+    data = json.loads(body)
+    assert code == 200 and set(data["budget"]) == {"7", "30"} and "slots" in data

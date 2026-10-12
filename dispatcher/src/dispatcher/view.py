@@ -6,10 +6,13 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from html import escape
+from zoneinfo import ZoneInfo
 
+from .config import DEFAULT_SLOTS
 from .decide import parse_dependencies
-from .models import LABEL_DEV, LABEL_DOCS, LABEL_FIX, LABEL_HUMAN, LABEL_QA, LABEL_REVIEW, LABEL_WORKING, Item
+from .models import CLOSES_RE, LABEL_DEV, LABEL_DOCS, LABEL_FIX, LABEL_HUMAN, LABEL_QA, LABEL_REVIEW, LABEL_WORKING, Item, Slot
+from .team_report import (DAY, clean_limits, clean_metrics, daily_hours, decision_alerts, flow_times, hour_strip,
+                          project_costs, rework_per_issue, slot_stats)
 from .watchdog import Check
 
 
@@ -26,8 +29,10 @@ class AppInfo:
 
 
 AGENT_LABELS = frozenset({LABEL_WORKING, LABEL_REVIEW, LABEL_FIX, LABEL_QA})
-CLOSES_RE = re.compile(r"(?i)\b(?:closes|fixes|resolves|cierra)\s+#(\d+)\b")
 ROLE_NAMES = {"dev": "dev", "review": "review", "qa": "QA", "fix": "fix", "docs": "docs"}
+LABEL_EPIC = "epic"
+COLUMNS = ("Por hacer", "Dev", "Review", "QA", "Fix", "Te espera")
+RANGES = (7, 30)
 
 
 @dataclass(frozen=True)
@@ -42,6 +47,7 @@ class PRInfo:
     mergeable_state: str | None = None
     ci: str = "none"
     files: tuple[str, ...] = ()
+    updated_at: str = ""
 
 
 @dataclass
@@ -59,6 +65,18 @@ class Snapshot:
     human_notes: dict[str, str] = field(default_factory=dict)
     summary: dict | None = None
     errors: dict[str, str] = field(default_factory=dict)
+    repos: tuple[str, ...] = ()
+    limits: list[dict[str, str]] = field(default_factory=list)
+    slots: tuple[Slot, ...] = DEFAULT_SLOTS
+    slot_costs: dict[str, float] = field(default_factory=dict)
+    slot_labels: dict[str, str] = field(default_factory=dict)
+    exhausted: dict[str, float] = field(default_factory=dict)
+    closed: list[dict] = field(default_factory=list)
+    merged: list[dict] = field(default_factory=list)
+    image_usd: float = 0.04
+    tz: str = "America/Argentina/Buenos_Aires"
+    repo_projects: dict[str, list[dict]] = field(default_factory=dict)
+    health_links: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -75,6 +93,11 @@ class View:
     usage: list[dict] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
     summary: dict | None = None
+    slots: list[dict] = field(default_factory=list)
+    projects: list[dict] = field(default_factory=list)
+    credentials: list[dict] = field(default_factory=list)
+    budget: dict[str, dict] = field(default_factory=dict)
+    health_links: dict[str, str] = field(default_factory=dict)
 
 
 def issue_of(pr: PRInfo) -> int | None:
@@ -169,6 +192,118 @@ def _usage(rows: list[dict[str, str]], now: float) -> list[dict]:
     return [{"engine": k, **v} for k, v in sorted(acc.items())]
 
 
+def zone(name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _age(now: float, iso_text: str) -> float | None:
+    try:
+        return max(0.0, now - datetime.fromisoformat(iso_text).timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
+def _hhmm(ts: float, tz: ZoneInfo) -> str:
+    return datetime.fromtimestamp(ts, tz).strftime("%H:%M")
+
+
+WEEKDAYS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+
+
+def _until_text(until: float, now: float, tz: ZoneInfo) -> str:
+    """HH:MM si es hoy; con el día adelante si no (un límite semanal puede durar días)."""
+    when = datetime.fromtimestamp(until, tz)
+    if when.date() == datetime.fromtimestamp(now, tz).date():
+        return when.strftime("%H:%M")
+    return f"{WEEKDAYS[when.weekday()]} {when.day} {when:%H:%M}"
+
+
+def _column(stage: str) -> str:
+    if stage in ("necesita a Eduardo", "espera a Eduardo"):
+        return "Te espera"
+    head = stage.split(" ", 1)[0]
+    return {"fix": "Fix", "QA": "QA", "review": "Review", "dev": "Dev", "docs": "Dev"}.get(head, "Por hacer")
+
+
+def _slot_cards(snap: Snapshot, rows: list, limits: list) -> list[dict]:
+    tz, now = zone(snap.tz), snap.now
+    day = slot_stats(rows, limits, snap.slots, {}, 0.0, now, DAY)
+    week = slot_stats(rows, limits, snap.slots, {}, 0.0, now, 7 * DAY)
+    cards = []
+    for s in snap.slots:
+        task = next(((k, t) for k, t in snap.active.items() if t.get("slot") == s.name), None)
+        until = snap.exhausted.get(s.name, 0.0)
+        active_since = None
+        if task:
+            key, t = task
+            active_since = float(t.get("started_at", now))
+            status, status_text = "trabajando", "Trabajando"
+            role = ROLE_NAMES.get(t.get("role"), t.get("role"))
+            detail = f"{role} de {key.replace('#', ' #')} · hace {int((now - active_since) // 60)} min"
+        else:
+            status, status_text = ("sin_cupo", f"Sin cupo hasta {_until_text(until, now, tz)}") if until > now else ("libre", "Libre")
+            done = [r for r in rows if r.get("puesto") == s.name]
+            if done:
+                last = max(done, key=lambda r: r["inicio"])
+                end = datetime.fromisoformat(last.get("fin") or last["inicio"]).timestamp()
+                role = ROLE_NAMES.get(last["rol"], last["rol"])
+                detail = f"Terminó {role} de {last['repo']} #{last['numero']} a las {_hhmm(end, tz)}"
+            else:
+                detail = "Sin tareas registradas"
+        strip = hour_strip(rows, limits, s.name, now, active_since, until if until > now else None)
+        cells = [{"state": st, "title": f"{_hhmm(now - DAY + i * 3600, tz)} · {st.replace('_', ' ')}"}
+                 for i, st in enumerate(strip)]
+        hits = week[s.name].limit_hits
+        footer = f"Uso en 7 días: {week[s.name].utilization:.0%} · {hits} {'corte' if hits == 1 else 'cortes'} en 7 días"
+        if s.engine == "gemini":
+            imgs = sum(int(r.get("imagenes_gemini") or 0) for r in rows if r.get("puesto") == s.name
+                       and now - datetime.fromisoformat(r["inicio"]).timestamp() <= DAY)
+            footer += f" · {imgs} imágenes en 24 h (USD {imgs * snap.image_usd:.2f})".replace(".", ",")
+        cards.append({"name": s.name, "engine": s.engine, "label": snap.slot_labels.get(s.name) or f"{s.engine} · {s.tier}",
+                      "status": status, "status_text": status_text, "detail": detail, "cells": cells,
+                      "tasks": day[s.name].tasks, "hours": round(day[s.name].minutes / 60, 2),
+                      "exhausted": round(day[s.name].exhausted_hours, 2), "footer": footer})
+    return cards
+
+
+def _budget(snap: Snapshot, rows: list, limits: list, days: int) -> dict:
+    window, now = days * DAY, snap.now
+    start = now - window
+    stats = slot_stats(rows, limits, snap.slots, snap.slot_costs, snap.image_usd, now, window)
+    in_window = [r for r in rows if datetime.fromisoformat(r["inicio"]).timestamp() >= start]
+    images = sum(int(r.get("imagenes_gemini") or 0) for r in in_window)
+    closed = [c for c in snap.closed if LABEL_EPIC not in (c.get("labels") or [])
+              and (_age(now, c.get("closed_at")) or window + 1) <= window]
+    cost = sum(s.cost_usd for s in stats.values())
+    by_project = []
+    for repo, pc in sorted(project_costs(rows, snap.slots, snap.slot_costs, snap.image_usd, now, window).items(),
+                           key=lambda kv: -kv[1]["cost"]):
+        n = sum(1 for c in closed if c.get("repo") == repo)
+        by_project.append({"repo": repo, "hours": round(pc["minutes"] / 60, 2), "images": pc["images"], "cost": pc["cost"],
+                           "closed": n, "cost_per_issue": pc["cost"] / n if n else None})
+    return {
+        "days": days,
+        "cost": cost,
+        "fixed": sum(snap.slot_costs.get(s.name, 0.0) for s in snap.slots) * window / (30 * DAY),
+        "images": images,
+        "image_cost": images * snap.image_usd,
+        "closed": len(closed),
+        "cost_per_issue": cost / len(closed) if closed else None,
+        "rework": rework_per_issue(in_window),
+        "cuts": sum(1 for r in limits if datetime.fromisoformat(r["detectado"]).timestamp() >= start),
+        "exhausted_hours": round(sum(s.exhausted_hours for s in stats.values()), 2),
+        "daily": daily_hours(rows, [s.name for s in snap.slots], now, days, zone(snap.tz)),
+        "exhausted": [{"slot": s.name, "engine": s.engine, "hours": round(stats[s.name].exhausted_hours, 2),
+                       "cuts": stats[s.name].limit_hits} for s in snap.slots],
+        "flow": flow_times(snap.merged, rows, now, window),
+        "alerts": decision_alerts(limits, rows, snap.slots, now),
+        "by_project": by_project,
+    }
+
+
 def build_view(snap: Snapshot) -> View:
     v = View(updated=snap.now, apps=snap.apps, health=snap.checks, errors=dict(snap.errors), summary=snap.summary)
     working = {(i.repo, i.number) for i in snap.issues if LABEL_WORKING in i.labels}
@@ -189,12 +324,13 @@ def build_view(snap: Snapshot) -> View:
         v.waiting.append({"repo": p.repo, "number": p.number, "title": p.title, "url": p.url, "ci": p.ci,
                           "clean": p.mergeable_state != "dirty", "preview": _preview(p, snap.apps, snap.org),
                           "issue": iss, "issue_url": f"https://github.com/{snap.org}/{p.repo}/issues/{iss}" if iss else None,
-                          "warnings": warnings})
+                          "warnings": warnings, "age": _age(snap.now, p.updated_at)})
     for it in [*snap.issues, *snap.prs]:
         if LABEL_HUMAN in it.labels:
             url = it.url if isinstance(it, PRInfo) else f"https://github.com/{snap.org}/{it.repo}/issues/{it.number}"
             v.human.append({"repo": it.repo, "number": it.number, "title": it.title, "url": url,
-                            "note": snap.human_notes.get(f"{it.repo}#{it.number}", "")})
+                            "note": snap.human_notes.get(f"{it.repo}#{it.number}", ""), "age": _age(snap.now, it.updated_at),
+                            "kind": "pr" if isinstance(it, PRInfo) else "issue"})
     v.alerts = [{"title": t, "url": u} for _, t, u in snap.ops]
     today = datetime.fromtimestamp(snap.now, tz=timezone.utc).date()
     for name, exp in sorted(snap.expiries.items()):
@@ -202,11 +338,14 @@ def build_view(snap: Snapshot) -> View:
             v.tokens.append(f"{name} vence el {exp.isoformat()} (en {(exp - today).days} días)")
     open_issues = {(i.repo, i.number) for i in snap.issues}
     for it in sorted([*snap.issues, *snap.prs], key=lambda x: (x.repo, x.number)):
+        if LABEL_EPIC in it.labels:
+            continue
         kind = "pr" if isinstance(it, PRInfo) else "issue"
         deps = [d for d in parse_dependencies(it.body) if (it.repo, d) in open_issues] if kind == "issue" else []
         stage = _stage(it.labels, kind, snap.active.get(f"{it.repo}#{it.number}"), deps, snap.now)
         url = it.url if isinstance(it, PRInfo) else f"https://github.com/{snap.org}/{it.repo}/issues/{it.number}"
-        v.work.setdefault(it.repo, []).append({"number": it.number, "kind": kind, "title": it.title, "url": url, "stage": stage})
+        v.work.setdefault(it.repo, []).append({"number": it.number, "kind": kind, "title": it.title, "url": url,
+                                               "stage": stage, "column": _column(stage)})
     open_prs = {(p.repo, p.number) for p in snap.prs}
     for a in snap.apps:
         repo = a.repo.split("/")[-1]
@@ -215,105 +354,36 @@ def build_view(snap: Snapshot) -> View:
             if (repo, n) in open_prs and url:
                 v.previews.append({"repo": repo, "number": n, "url": url})
     v.usage = _usage(snap.metrics, snap.now)
+    for name, exp in sorted(snap.expiries.items()):
+        if exp is None:
+            continue
+        days = (exp - today).days
+        level = "critico" if days < 7 else "advertencia" if days <= 30 else "ok"
+        text = f"vencido hace {-days} días" if days < 0 else f"vence en {days} días ({exp.isoformat()})"
+        v.credentials.append({"name": name, "level": level, "text": text})
+    repos = list(snap.repos) or sorted(v.work)
+    for repo in repos:
+        epics = sorted((i for i in snap.issues if i.repo == repo and LABEL_EPIC in i.labels and i.sub_issues),
+                       key=lambda i: i.number)
+        epic = None
+        if epics:
+            e = epics[0]
+            epic = {"number": e.number, "title": e.title, "url": f"https://github.com/{snap.org}/{repo}/issues/{e.number}",
+                    "done": e.sub_issues[0], "total": e.sub_issues[1]}
+        items = v.work.get(repo, [])
+        counts = dict.fromkeys(COLUMNS, 0)
+        for w in items:
+            counts[w["column"]] += 1
+        sites = [{"name": a.name, "url": a.url, "status": a.status} for a in snap.apps
+                 if a.repo in (f"{snap.org}/{repo}", repo) and a.url]
+        v.projects.append({"repo": repo, "url": f"https://github.com/{snap.org}/{repo}",
+                           "views": list(snap.repo_projects.get(repo, [])), "sites": sites,
+                           "epic": epic, "counts": counts, "items": items})
+    rows, limits = clean_metrics(snap.metrics), clean_limits(snap.limits)
+    v.slots = _slot_cards(snap, rows, limits)
+    v.budget = {str(d): _budget(snap, rows, limits, d) for d in RANGES}
+    v.health_links = dict(snap.health_links)
     return v
 
 
 AGE_MARK = "__EDAD__"  # el servidor lo reemplaza por los segundos desde la recolección
-
-CSS = """
-:root{color-scheme:dark}body{font:15px/1.45 -apple-system,system-ui,sans-serif;background:#0d1117;color:#e6edf3;margin:0;padding:14px;max-width:760px;margin:auto}
-h1{font-size:20px;margin:4px 0 2px}h2{font-size:16px;margin:22px 0 8px;border-bottom:1px solid #30363d;padding-bottom:4px}
-.muted{color:#8b949e;font-size:13px}.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px 12px;margin:8px 0}
-.urgent{border-color:#d29922}a{color:#58a6ff;text-decoration:none}.ok{color:#3fb950}.bad{color:#f85149}.warn{color:#d29922}
-table{width:100%;border-collapse:collapse;font-size:14px}td{padding:4px 2px;border-bottom:1px solid #21262d;vertical-align:top}
-button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid #30363d;background:#238636;color:#fff}
-.tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:10px;background:#21262d;margin-left:4px}
-"""
-
-
-_APP_STATES = {"running": "Corriendo", "exited": "Detenida", "restarting": "Reiniciando", "starting": "Arrancando",
-               "degraded": "Degradada", "stopped": "Detenida"}
-_APP_HEALTH = {"healthy": "sana", "unhealthy": "con fallas", "unknown": "sin healthcheck"}
-
-
-def _app_status(status: str) -> tuple[str, str]:
-    """Traduce el estado de Coolify (`<estado>:<salud>`, p. ej. `running:unknown`) a clase CSS y texto legible."""
-    state, _, health = status.partition(":")
-    ok = state == "running" and health != "unhealthy"
-    text = _APP_STATES.get(state, state or "desconocido")
-    if health:
-        text += f" ({_APP_HEALTH.get(health, health)})"
-    return ("ok" if ok else "bad"), text
-
-
-def _a(url: str | None, text: str) -> str:
-    return f'<a href="{escape(url or "#", quote=True)}">{escape(text)}</a>' if url else escape(text)
-
-
-def _err(view: View, section: str) -> str:
-    return f'<p class="bad">⚠️ sin datos ({escape(view.errors[section])})</p>' if section in view.errors else ""
-
-
-def render(view: View) -> str:
-    from .summary import render_summary  # import diferido: summary no depende de view, pero así queda a salvo de ciclos
-
-    reload_s = 10 if (view.summary or {}).get("status") == "running" else 60
-    out = [f'<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-           f'<meta http-equiv="refresh" content="{reload_s}"><title>Estado · AI Dev Team</title><style>{CSS}</style></head><body>',
-           f'<h1>AI Dev Team</h1><div class="muted">Actualizado hace {AGE_MARK} s · se recarga sola</div>']
-    # 1. Qué espera de ti
-    out.append("<h2>🔔 Qué espera de ti</h2>")
-    out.append(_err(view, "github"))
-    if "github" not in view.errors and not (view.waiting or view.human or view.alerts or view.tokens):
-        out.append('<p class="ok">Nada pendiente 🎉</p>')
-    for i, w in enumerate(view.waiting, 1):
-        ci = {"success": '<span class="ok">CI ✓</span>', "failure": '<span class="bad">CI ✗</span>',
-              "pending": '<span class="warn">CI …</span>'}.get(w["ci"], "")
-        conflict = "" if w["clean"] else '<span class="warn">conflictos</span>'
-        preview = f' · {_a(w["preview"], "preview")}' if w["preview"] else ""
-        issue = f' · {_a(w.get("issue_url"), f"issue #{w["issue"]}")}' if w.get("issue") else ""
-        warns = "".join(f'<div class="warn">⚠️ {escape(x)}</div>' for x in w["warnings"])
-        out.append(f'<div class="card urgent"><b>{i}.</b> {_a(w["url"], f"{w["repo"]} #{w["number"]}: {w["title"]}")}'
-                   f'<div class="muted">Revisar y mergear{issue} · {ci} {conflict}{preview}</div>{warns}</div>')
-    for h in view.human:
-        note = f'<div class="muted">{escape(h["note"][:300])}</div>' if h["note"] else ""
-        out.append(f'<div class="card urgent">🙋 {_a(h["url"], f"{h["repo"]} #{h["number"]}: {h["title"]}")} '
-                   f'<span class="tag">needs:human</span>{note}</div>')
-    for a in view.alerts:
-        out.append(f'<div class="card urgent">🚨 {_a(a["url"], a["title"])}</div>')
-    for t in view.tokens:
-        out.append(f'<div class="card urgent">🔑 {escape(t)}</div>')
-    # 2. Trabajo en curso
-    out.append("<h2>🛠️ Trabajo en curso</h2>")
-    out.append(_err(view, "github"))
-    out.append(_err(view, "dispatcher"))
-    for repo, rows in sorted(view.work.items()):
-        out.append(f'<div class="card"><b>{escape(repo)}</b><table>')
-        for r in rows:
-            out.append(f'<tr><td>{_a(r["url"], f"#{r["number"]} {r["title"]}")}</td><td class="muted">{escape(r["stage"])}</td></tr>')
-        out.append("</table></div>")
-    # 3. Despliegues
-    out.append("<h2>🚀 Despliegues</h2>")
-    out.append(_err(view, "coolify"))
-    for a in view.apps:
-        ok, status = _app_status(a.status)
-        out.append(f'<div class="card">{_a(a.url, a.name)} <span class="{ok}" title="{escape(a.status)}">{escape(status)}</span>'
-                   f'<div class="muted">Último deploy: {escape(a.last_deploy or "—")} ({escape(a.last_deploy_status or "—")})</div></div>')
-    for p in view.previews:
-        out.append(f'<div class="card">🔎 Preview {_a(p["url"], f"{p["repo"]} PR #{p["number"]}")}</div>')
-    # 4. Salud y consumo
-    out.append("<h2>🩺 Salud y consumo</h2>")
-    out.append(_err(view, "salud"))
-    out.append('<div class="card"><table>' + "".join(
-        f'<tr><td>{escape(c.name)}</td><td class="{"ok" if c.ok else "bad"}">{"OK" if c.ok else "FALLA"}</td>'
-        f'<td class="muted">{escape(c.detail)}</td></tr>' for c in view.health) + "</table></div>")
-    if view.usage:
-        out.append('<div class="card"><table><tr><td></td><td class="muted">24 h</td><td class="muted">7 días</td></tr>' + "".join(
-            f'<tr><td>{escape(u["engine"])}</td><td>{u["tasks_24h"]} tareas · {u["minutes_24h"]:.0f} min</td>'
-            f'<td>{u["tasks_7d"]} tareas · {u["minutes_7d"]:.0f} min</td></tr>' for u in view.usage) + "</table></div>")
-    else:
-        out.append('<p class="muted">Sin tareas en los últimos 7 días.</p>')
-    # 5. Resumen del operador (a pedido)
-    out.append(render_summary(view.summary, view.errors.get("resumen"), view.updated))
-    out.append("</body></html>")
-    return "".join(out)

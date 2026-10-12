@@ -53,6 +53,39 @@ class ConfigError(ValueError):
     """La configuración del entorno es inválida o incompleta."""
 
 
+def _slot_env(name: str) -> str:
+    return name.upper().replace("-", "_")
+
+
+def parse_slots(env: Mapping[str, str]) -> tuple[Slot, ...]:
+    raw = env.get("SLOTS", "").strip()
+    if not raw:
+        return DEFAULT_SLOTS
+    slots: list[Slot] = []
+    for part in (p.strip() for p in raw.split(",") if p.strip()):
+        bits = part.split(":")
+        if len(bits) != 3 or bits[1] not in ENGINES or not bits[0]:
+            raise ConfigError(f"SLOTS: cada puesto es nombre:motor:nivel con motor en {ENGINES}, no {part!r}")
+        slots.append(Slot(*bits))
+    if len({s.name for s in slots}) != len(slots):
+        raise ConfigError("SLOTS tiene nombres de puesto repetidos")
+    return tuple(slots)
+
+
+def parse_slot_costs(env: Mapping[str, str], slots: tuple[Slot, ...]) -> dict[str, float]:
+    costs: dict[str, float] = {}
+    for s in slots:
+        raw = env.get(f"SLOT_COST_{_slot_env(s.name)}", "").strip()
+        if raw:
+            costs[s.name] = float(raw)
+    return costs
+
+
+def parse_slot_labels(env: Mapping[str, str], slots: tuple[Slot, ...]) -> dict[str, str]:
+    """Línea de plan y rol bajo el nombre del puesto en la pantalla de estado (SLOT_LABEL_<PUESTO>)."""
+    return {s.name: v for s in slots if (v := env.get(f"SLOT_LABEL_{_slot_env(s.name)}", "").strip())}
+
+
 @dataclass(frozen=True)
 class Config:
     github_token: str
@@ -107,26 +140,8 @@ class Config:
                 raise ConfigError(f"{name} debe ser mayor que 0")
             return value
 
-        def parse_slots() -> tuple[Slot, ...]:
-            raw = env.get("SLOTS", "").strip()
-            if not raw:
-                return DEFAULT_SLOTS
-            slots: list[Slot] = []
-            for part in (p.strip() for p in raw.split(",") if p.strip()):
-                bits = part.split(":")
-                if len(bits) != 3 or bits[1] not in ENGINES or not bits[0]:
-                    raise ConfigError(f"SLOTS: cada puesto es nombre:motor:nivel con motor en {ENGINES}, no {part!r}")
-                slots.append(Slot(*bits))
-            if len({s.name for s in slots}) != len(slots):
-                raise ConfigError("SLOTS tiene nombres de puesto repetidos")
-            return tuple(slots)
-
-        slots = parse_slots()
-        costs: dict[str, float] = {}
-        for s in slots:
-            raw_cost = env.get(f"SLOT_COST_{s.name.upper().replace('-', '_')}", "").strip()
-            if raw_cost:
-                costs[s.name] = float(raw_cost)
+        slots = parse_slots(env)
+        costs = parse_slot_costs(env, slots)
 
         return cls(
             github_token=required("GITHUB_TOKEN"),

@@ -167,9 +167,37 @@ def test_search_since_returns_compact_items(gh):
     r = respx.get("https://api.github.com/search/issues").respond(json={"items": [
         {"number": 23, "title": "Kit QR", "html_url": "https://github.com/maxiar-org/qr-generator/pull/23",
          "repository_url": "https://api.github.com/repos/maxiar-org/qr-generator", "closed_at": "2026-10-08T05:30:00Z",
-         "state": "closed", "pull_request": {}},
+         "created_at": "2026-10-08T01:00:00Z", "state": "closed", "body": "Closes #7",
+         "labels": [{"name": "engine:codex"}], "pull_request": {"merged_at": "2026-10-08T05:30:00Z"}},
     ]})
     items = gh.search_since("org:maxiar-org is:pr is:merged merged:>=2026-10-08T00:00:00Z")
     assert items == [{"repo": "qr-generator", "number": 23, "title": "Kit QR",
-                      "url": "https://github.com/maxiar-org/qr-generator/pull/23", "closed_at": "2026-10-08T05:30:00Z", "state": "closed"}]
+                      "url": "https://github.com/maxiar-org/qr-generator/pull/23", "closed_at": "2026-10-08T05:30:00Z",
+                      "state": "closed", "created_at": "2026-10-08T01:00:00Z", "merged_at": "2026-10-08T05:30:00Z",
+                      "closes": 7, "labels": ["engine:codex"]}]
     assert r.calls.last.request.url.params["q"].startswith("org:maxiar-org is:pr")
+
+
+@respx.mock
+def test_list_open_items_reads_updated_at_and_sub_issues(gh):
+    route("GET", "/pulls").respond(json=[])
+    route("GET", "/issues").respond(json=[
+        {"number": 11, "title": "Épica", "body": "", "labels": [{"name": "epic"}], "updated_at": "2026-10-12T05:00:00Z",
+         "sub_issues_summary": {"total": 9, "completed": 4, "percent_completed": 44}},
+        {"number": 12, "title": "Suelto", "body": "", "labels": [], "sub_issues_summary": {"total": 0, "completed": 0}},
+    ])
+    a, b = gh.list_open_items("qr")
+    assert (a.updated_at, a.sub_issues) == ("2026-10-12T05:00:00Z", (4, 9))
+    assert (b.updated_at, b.sub_issues) == ("", None)
+
+
+@respx.mock
+def test_repo_projects_lists_open_views_in_one_query(gh):
+    r = respx.post("https://api.github.com/graphql").respond(json={"data": {
+        "r0": {"projectsV2": {"nodes": [{"title": "NIKITO Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/3", "closed": False},
+                                        {"title": "Vieja", "url": "u", "closed": True}]}},
+        "r1": None}})
+    assert gh.repo_projects(["nikito", "qr", "mal nombre"]) == {
+        "nikito": [{"title": "NIKITO Roadmap", "url": "https://github.com/orgs/maxiar-org/projects/3"}], "qr": []}
+    body = json.loads(r.calls.last.request.content)
+    assert body["variables"] == {"org": "maxiar-org"} and "mal nombre" not in body["query"] and r.call_count == 1

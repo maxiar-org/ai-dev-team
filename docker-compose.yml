@@ -124,6 +124,18 @@ services:
       HEARTBEAT_PATH: /state/heartbeat
       STATE_PATH: /state/state.json
       METRICS_PATH: /pilot/metrics.csv
+      LIMITS_PATH: /pilot/limits.csv
+      # Puestos (fase 5a) para la pantalla de equipo y presupuesto (fase 5b).
+      SLOTS: ${SLOTS:-}
+      SLOT_COST_CLAUDE_SENIOR: ${SLOT_COST_CLAUDE_SENIOR:-}
+      SLOT_COST_CODEX_SENIOR: ${SLOT_COST_CODEX_SENIOR:-}
+      SLOT_COST_GEMINI: ${SLOT_COST_GEMINI:-}
+      SLOT_LABEL_CLAUDE_SENIOR: ${SLOT_LABEL_CLAUDE_SENIOR:-}
+      SLOT_LABEL_CODEX_SENIOR: ${SLOT_LABEL_CODEX_SENIOR:-}
+      SLOT_LABEL_GEMINI: ${SLOT_LABEL_GEMINI:-}
+      GEMINI_IMAGE_USD: ${GEMINI_IMAGE_USD:-0.04}
+      ESTADO_TZ: ${ESTADO_TZ:-America/Argentina/Buenos_Aires}  # zona en la que la pantalla muestra las horas
+      HEALTH_LINKS: ${HEALTH_LINKS:-}  # canvas=https://…,coolify=https://…: las píldoras de salud abren cada herramienta
       TUNNEL_READY_URL: http://cloudflared:2000/ready
       COOLIFY_HEALTH_URL: ${COOLIFY_HEALTH_URL:-}
       COOLIFY_API_URL: http://coolify:8080/api/v1
