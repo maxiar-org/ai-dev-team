@@ -32,13 +32,13 @@ def test_docs_preferences_do_not_wait():
 
 
 @pytest.mark.parametrize("labels,expected", [
-    (L("engine:codex"), ("claude", "gemini")),
+    (L("engine:codex"), ("claude",)),
     (L("engine:gemini"), ("claude", "codex")),
-    (L("engine:claude"), ("codex", "gemini")),
-    (L("engine:claude", "engine:codex"), ("gemini",)),
-    (L(), ("claude", "gemini")),
+    (L("engine:claude"), ("codex",)),
+    (L("engine:claude", "engine:codex"), ()),
+    (L(), ("claude",)),
 ])
-def test_review_never_uses_the_dev_engine(labels, expected):
+def test_review_never_uses_the_dev_engine_and_gemini_does_not_review(labels, expected):
     assert preferences("review", labels, "pr") == (expected, False)
 
 

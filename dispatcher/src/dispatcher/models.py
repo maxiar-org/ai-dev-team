@@ -153,8 +153,18 @@ class DocsOnlyNotice:
     item: Item
 
 
+@dataclass(frozen=True)
+class UnassignableNotice:
+    """Ningún puesto configurado puede tomar la tarea (motor forzado sin puesto o PR sin reviewer posible)."""
+
+    item: Item
+    role: Role
+    comment_id: int | None = None
+
+
 Action = Union[
-    StartTask, FinishTask, PauseConversation, ReleaseOrphan, EscalateConflict, BlockedNotice, DocsOnlyNotice
+    StartTask, FinishTask, PauseConversation, ReleaseOrphan, EscalateConflict, BlockedNotice, DocsOnlyNotice,
+    UnassignableNotice,
 ]
 
 

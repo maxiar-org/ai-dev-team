@@ -21,6 +21,7 @@ class State:
     qa_rounds: dict[str, int] = field(default_factory=dict)
     docs_only_notified: set[str] = field(default_factory=set)
     slot_exhausted_until: dict[str, float] = field(default_factory=dict)
+    limit_streak: dict[str, int] = field(default_factory=dict)
 
 
 class StateStore:
@@ -41,6 +42,7 @@ class StateStore:
             qa_rounds=dict(data.get("qa_rounds", {})),
             docs_only_notified=set(data.get("docs_only_notified", [])),
             slot_exhausted_until={k: float(v) for k, v in data.get("slot_exhausted_until", {}).items()},
+            limit_streak={k: int(v) for k, v in data.get("limit_streak", {}).items()},
         )
 
     def save(self, state: State) -> None:
@@ -55,6 +57,7 @@ class StateStore:
             "qa_rounds": state.qa_rounds,
             "docs_only_notified": sorted(state.docs_only_notified),
             "slot_exhausted_until": state.slot_exhausted_until,
+            "limit_streak": state.limit_streak,
         }
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")

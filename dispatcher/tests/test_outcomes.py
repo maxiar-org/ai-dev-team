@@ -202,3 +202,22 @@ def test_comment_or_conflict_task_hit_by_limit_does_not_readd_label():
 def test_other_errors_still_escalate():
     out = outcome_for(task(), "error", "flutter test falló", frozenset(), None, 0, 2, now=1_000.0, tz="UTC")
     assert out.result == "needs_human" and out.limited_until is None
+
+
+def test_dev_engine_label_replaces_previous_engine_labels_on_pr():
+    pr = Item("qr", 7, "pr", "PR", "", frozenset({"engine:claude"}), "agent/3-whatsapp")
+    out = outcome_for(task(engine="codex"), "finished", "listo", frozenset(), pr, 0, 2)
+    assert RemoveLabel(7, "engine:claude") in out.ops
+    assert AddLabels(7, ("agent:review", "engine:codex")) in out.ops
+
+
+@pytest.mark.parametrize("status", ["timeout", "missing"])
+def test_limit_text_on_timeout_or_missing_is_not_a_limit(status):
+    out = outcome_for(task(), status, LIMIT_MSG, frozenset(), None, 0, 2, now=1_000.0, tz="UTC")
+    assert out.result != "limite" and out.limited_until is None
+
+
+def test_repeated_limits_escalate_after_three_in_a_row():
+    out = outcome_for(task(), "error", LIMIT_MSG, frozenset(), None, 0, 2, now=1_000.0, tz="UTC", limit_streak=2)
+    assert out.result == "limite_repetido" and out.limited_until is not None
+    assert AddLabels(3, ("needs:human",)) in out.ops

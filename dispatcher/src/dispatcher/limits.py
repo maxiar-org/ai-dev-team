@@ -8,9 +8,12 @@ from zoneinfo import ZoneInfo
 
 LIMIT_MARGIN_S = 300
 DEFAULT_LIMIT_S = 3600
+MIN_LIMIT_S = 600  # una fecha ya pasada (o mal interpretada) igual bloquea un rato: evita reintentos en cada ciclo
+MAX_AHEAD_S = 8 * 86400  # más lejos que esto se considera mal leído y se usa el valor por defecto
 
 _IS_LIMIT = re.compile(
-    r"hit your (?:usage|session) limit|rate_limit|RESOURCE_EXHAUSTED|exceeded your current quota",
+    r'hit your (?:usage|session) limit|"errorKind":\s*"rate_limit"|rate_limit_error|RESOURCE_EXHAUSTED'
+    r"|exceeded your current quota|429 Too Many Requests",
     re.IGNORECASE,
 )
 _CODEX_AT = re.compile(r"try again at\s+(?P<when>[^\n]+?)\.?\s*$", re.IGNORECASE | re.MULTILINE)
@@ -65,6 +68,6 @@ def detect_limit(text: str | None, now: float, tz: str) -> float | None:
         until = _parse_when(m.group("when"), now, _zone(m.group("tz")))
     elif m := _CODEX_AT.search(text):
         until = _parse_when(m.group("when"), now, _zone(tz))
-    if until is None:
+    if until is None or until - now > MAX_AHEAD_S:
         return now + DEFAULT_LIMIT_S
-    return until + LIMIT_MARGIN_S
+    return max(until + LIMIT_MARGIN_S, now + MIN_LIMIT_S)

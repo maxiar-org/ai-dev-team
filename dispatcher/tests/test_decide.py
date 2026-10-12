@@ -16,6 +16,7 @@ from dispatcher.models import (
     ReleaseOrphan,
     Slot,
     StartTask,
+    UnassignableNotice,
 )
 from dispatcher.state import State
 
@@ -275,8 +276,8 @@ def test_finish_before_start_priority(cfg):
 def test_exhausted_slot_is_not_used_and_review_falls_back(cfg):
     cfg3 = dataclasses.replace(cfg, slots=THREE)
     state = State(slot_exhausted_until={"claude-senior": NOW + 600})
-    [start] = starts(decide([pr(5, "agent:review", "engine:codex")], [], {}, state, cfg3, NOW))
-    assert start.slot == "gemini"
+    [start] = starts(decide([pr(5, "agent:review", "engine:gemini")], [], {}, state, cfg3, NOW))
+    assert start.slot == "codex-senior"  # Claude sin cupo: revisa el otro motor que no programó
 
 
 def test_two_slots_of_different_engines_run_in_parallel(cfg):
@@ -313,3 +314,13 @@ def test_docs_issue_waits_for_dependency(cfg):
 def test_pr_waiting_for_qa_is_not_fixed_for_conflicts(cfg):
     actions = decide([dirty_pr(11, "agent:qa")], [], {}, State(), cfg, NOW)
     assert [a for a in actions if isinstance(a, StartTask) and a.trigger == "conflict"] == []
+
+
+def test_review_with_no_eligible_engine_is_escalated_not_skipped(cfg):
+    p = pr(5, "agent:review", "engine:claude", "engine:codex")
+    assert decide([p], [], {}, State(), cfg, NOW) == [UnassignableNotice(p, "review")]
+
+
+def test_issue_forced_to_engine_without_slot_is_escalated(cfg):
+    i = issue(1, "agent:dev", "engine:gemini")
+    assert decide([i], [], {}, State(), cfg, NOW) == [UnassignableNotice(i, "dev")]

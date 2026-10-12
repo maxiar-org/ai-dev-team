@@ -39,7 +39,8 @@ def preferences(role: str, labels: frozenset[str], kind: str) -> tuple[tuple[str
     # PR: los engine:* dicen quién programó.
     dev = engine_from_labels(labels, None)
     if role == "review":
-        order = ("codex", "gemini") if dev == "claude" else ("claude", "codex", "gemini")
+        # Por ahora revisan Claude y Codex (spec, fuera de alcance: Gemini como reviewer).
+        order = ("codex",) if dev == "claude" else ("claude", "codex")
         excluded = _dev_engines(labels) or {"codex"}
         return tuple(e for e in order if e not in excluded), False
     if role == "qa":

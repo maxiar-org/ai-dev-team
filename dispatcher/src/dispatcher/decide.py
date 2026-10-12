@@ -27,6 +27,7 @@ from .models import (
     PauseConversation,
     ReleaseOrphan,
     StartTask,
+    UnassignableNotice,
     item_key,
 )
 from .routing import choose_slot, preferences
@@ -127,6 +128,11 @@ def decide(
         if key in busy_items or key in started_items:
             continue
         prefs, waits = preferences(candidate.role, candidate.item.labels, candidate.item.kind)
+        if not any(s.engine in prefs for s in cfg.slots):
+            # Nunca podría arrancar: avisar en vez de saltearla en silencio para siempre.
+            actions.append(UnassignableNotice(candidate.item, candidate.role, candidate.comment_id))
+            started_items.add(key)
+            continue
         slot = choose_slot(prefs, waits, cfg.slots, busy_slots, state.slot_exhausted_until, now)
         if slot is None:
             continue

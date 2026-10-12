@@ -34,6 +34,7 @@ from .models import (
     RemoveLabel,
     RequestReview,
     StartTask,
+    UnassignableNotice,
 )
 from .outcomes import find_pr_for_issue, outcome_for
 from .prompts import build_prompt
@@ -144,6 +145,17 @@ class Dispatcher:
                 "⚠️ El PR sigue con conflictos después de los intentos automáticos de resolución. "
                 "Revísalo, o comenta con @openhands cómo resolverlos.",
             )
+        elif isinstance(action, UnassignableNotice):
+            item = action.item
+            self.github.add_labels(item.repo, item.number, [LABEL_HUMAN])
+            self.github.comment(
+                item.repo, item.number,
+                f"⚠️ Ningún puesto configurado puede tomar el `{action.role}` de este item: el motor forzado "
+                "no tiene puesto, o el PR no tiene un reviewer de otro motor (revisá los labels `engine:*`). "
+                "Ajustá los labels o `SLOTS`, sacá `needs:human` y volvé a poner el label.",
+            )
+            if action.comment_id is not None:
+                state.processed_comments.add(action.comment_id)
         elif isinstance(action, DocsOnlyNotice):
             item = action.item
             self.github.comment(
@@ -235,6 +247,7 @@ class Dispatcher:
             task, a.status, final, labels, pr,
             state.review_rounds.get(task.key, 0), self.cfg.max_review_rounds,
             qa_rounds=state.qa_rounds.get(task.key, 0), now=now, tz=self.cfg.limit_tz,
+            limit_streak=state.limit_streak.get(task.key, 0),
         )
         failed = []
         for op in outcome.ops:
@@ -255,10 +268,14 @@ class Dispatcher:
                 log.exception("Tampoco pude escalar %s", task.key)
         if outcome.limited_until is not None:
             state.slot_exhausted_until[task.slot or task.engine] = outcome.limited_until
+        if outcome.result == "limite":
+            state.limit_streak[task.key] = state.limit_streak.get(task.key, 0) + 1
             if task.comment_id is not None:
                 state.processed_comments.discard(task.comment_id)  # el @openhands vuelve a correr
             if task.trigger == "conflict":
                 state.conflict_attempts[task.key] = max(0, state.conflict_attempts.get(task.key, 1) - 1)
+        else:
+            state.limit_streak.pop(task.key, None)
         # Siempre se libera la tarea: si no, su puesto queda bloqueado para siempre.
         state.review_rounds[task.key] = outcome.review_rounds
         state.qa_rounds[task.key] = outcome.qa_rounds

@@ -49,3 +49,21 @@ def test_limit_with_unparseable_time_uses_default():
 @pytest.mark.parametrize("msg", ["", "flutter test falló: 3 tests", "upstream connect error 503", None])
 def test_other_errors_are_not_limits(msg):
     assert detect_limit(msg, NOW, TZ) is None
+
+
+def test_past_absolute_date_still_blocks_for_a_while():
+    msg = "You've hit your usage limit. try again at Oct 1st, 2026 4:05 PM."
+    assert detect_limit(msg, NOW, TZ) >= NOW + 600
+
+
+def test_absurdly_far_date_falls_back_to_default():
+    msg = "You've hit your usage limit. try again at Oct 1st, 2027 4:05 PM."
+    assert detect_limit(msg, NOW, TZ) == NOW + DEFAULT_LIMIT_S
+
+
+def test_mentioning_rate_limit_in_work_is_not_a_limit():
+    assert detect_limit("Agregué un middleware rate_limit al endpoint /login", NOW, TZ) is None
+
+
+def test_claude_error_kind_rate_limit_without_time_is_a_limit():
+    assert detect_limit('ACP error: {"errorKind": "rate_limit"}', NOW, TZ) == NOW + DEFAULT_LIMIT_S

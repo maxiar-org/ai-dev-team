@@ -308,6 +308,7 @@ def test_usage_limit_requeues_task_and_marks_slot_exhausted(tmp_path, cfg):
     assert "agent:dev" in gh.labels(3) and "needs:human" not in gh.labels(3)
     assert state.active == {}
     assert "sin cupo" in gh.posted[-1][1]
+    assert state.limit_streak == {f"{REPO}#3": 1}
 
 
 def test_comment_task_hit_by_limit_runs_again(tmp_path, cfg):
@@ -319,3 +320,13 @@ def test_comment_task_hit_by_limit_runs_again(tmp_path, cfg):
     cv.responses["conv1"] = LIMIT_MSG
     d.run_once()
     assert 56 not in StateStore(cfg.state_path).load().processed_comments
+
+
+def test_unassignable_review_is_escalated_once(tmp_path, cfg):
+    d, gh, cv, ws, clock = make(tmp_path, cfg)
+    gh.add_item(Item(REPO, 5, "pr", "PR", "Closes #1", frozenset({"agent:review", "engine:claude", "engine:codex"}), "agent/1-x"))
+    d.run_once()
+    d.run_once()
+    assert "needs:human" in gh.labels(5)
+    assert len([b for n, b in gh.posted if n == 5]) == 1
+    assert cv.created == []
