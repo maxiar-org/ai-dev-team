@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-ENGINES = ("claude", "codex")
+from .models import Slot
+
+ENGINES = ("claude", "codex", "gemini")
 
 # agent_settings que espera POST /api/conversations de Canvas para cada motor ACP.
 ENGINE_AGENT_SETTINGS: dict[str, dict[str, str]] = {
     "claude": {"agent_kind": "acp", "acp_server": "claude-code"},
     "codex": {"agent_kind": "acp", "acp_server": "codex"},
+    # Valor a confirmar en la prueba de Gemini CLI de la fase 5a (tarea 1 del plan).
+    "gemini": {"agent_kind": "acp", "acp_server": "gemini-cli"},
 }
+DEFAULT_SLOTS = (Slot("claude", "claude", "senior"), Slot("codex", "codex", "senior"))
 
 
 # MCP servers que reciben siempre los agentes. Viven acá y no solo en los ajustes de Canvas porque
@@ -65,12 +70,13 @@ class Config:
     task_timeout_min: int = 60
     max_review_rounds: int = 2
     idle_grace_seconds: int = 120
-    default_dev_engine: str = "codex"
     project_number: int | None = None
-    qa_engine: str = "codex"
-    docs_engine: str = "claude"
     docs_only_repos: tuple[str, ...] = ()
     heartbeat_path: Path | None = None
+    slots: tuple[Slot, ...] = DEFAULT_SLOTS
+    slot_costs: dict[str, float] = field(default_factory=dict)
+    limit_tz: str = "America/Argentina/Buenos_Aires"
+    gemini_image_usd: float = 0.04
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -100,13 +106,26 @@ class Config:
                 raise ConfigError(f"{name} debe ser mayor que 0")
             return value
 
-        def engine_var(name: str, default: str) -> str:
-            value = env.get(name, "").strip() or default
-            if value not in ENGINES:
-                raise ConfigError(f"{name} debe ser uno de {ENGINES}, no {value!r}")
-            return value
+        def parse_slots() -> tuple[Slot, ...]:
+            raw = env.get("SLOTS", "").strip()
+            if not raw:
+                return DEFAULT_SLOTS
+            slots: list[Slot] = []
+            for part in (p.strip() for p in raw.split(",") if p.strip()):
+                bits = part.split(":")
+                if len(bits) != 3 or bits[1] not in ENGINES or not bits[0]:
+                    raise ConfigError(f"SLOTS: cada puesto es nombre:motor:nivel con motor en {ENGINES}, no {part!r}")
+                slots.append(Slot(*bits))
+            if len({s.name for s in slots}) != len(slots):
+                raise ConfigError("SLOTS tiene nombres de puesto repetidos")
+            return tuple(slots)
 
-        engine = engine_var("DEFAULT_DEV_ENGINE", "codex")
+        slots = parse_slots()
+        costs: dict[str, float] = {}
+        for s in slots:
+            raw_cost = env.get(f"SLOT_COST_{s.name.upper().replace('-', '_')}", "").strip()
+            if raw_cost:
+                costs[s.name] = float(raw_cost)
 
         return cls(
             github_token=required("GITHUB_TOKEN"),
@@ -124,10 +143,11 @@ class Config:
             task_timeout_min=integer("TASK_TIMEOUT_MIN", 60),
             max_review_rounds=integer("MAX_REVIEW_ROUNDS", 2),
             idle_grace_seconds=integer("IDLE_GRACE_SECONDS", 120),
-            default_dev_engine=engine,
             project_number=integer("PROJECT_NUMBER", 0) or None,
-            qa_engine=engine_var("QA_ENGINE", "codex"),
-            docs_engine=engine_var("DOCS_ENGINE", "claude"),
             heartbeat_path=Path(hb) if (hb := env.get("HEARTBEAT_PATH", "/state/heartbeat").strip()) else None,
             docs_only_repos=tuple(r.strip() for r in env.get("DOCS_ONLY_REPOS", "").split(",") if r.strip()),
+            slots=slots,
+            slot_costs=costs,
+            limit_tz=env.get("LIMIT_TZ", "").strip() or "America/Argentina/Buenos_Aires",
+            gemini_image_usd=float(env.get("GEMINI_IMAGE_USD", "").strip() or 0.04),
         )

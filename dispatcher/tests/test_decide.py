@@ -14,6 +14,7 @@ from dispatcher.models import (
     EscalateConflict,
     PauseConversation,
     ReleaseOrphan,
+    Slot,
     StartTask,
 )
 from dispatcher.state import State
@@ -43,7 +44,7 @@ def starts(actions):
 
 def test_issue_with_agent_dev_starts_dev_task_with_default_engine(cfg):
     actions = decide([issue(1, "agent:dev")], [], {}, State(), cfg, NOW)
-    assert actions == [StartTask(issue(1, "agent:dev"), "dev", "codex", "label")]
+    assert actions == [StartTask(issue(1, "agent:dev"), "dev", "codex", "label", slot="codex")]
 
 
 def test_engine_label_overrides_default(cfg):
@@ -75,7 +76,7 @@ def test_working_or_needs_human_items_are_not_started_by_labels(cfg):
 def test_one_task_per_engine(cfg):
     items = [issue(1, "agent:dev"), issue(2, "agent:dev"), pr(5, "agent:review", "engine:codex")]
     result = starts(decide(items, [], {}, State(), cfg, NOW))
-    assert [(s.item.number, s.engine) for s in result] == [(1, "codex"), (5, "claude")]
+    assert [(s.item.number, s.engine) for s in result] == [(5, "claude"), (1, "codex")]
 
 
 def test_busy_engine_blocks_new_tasks(cfg):
@@ -113,7 +114,7 @@ def test_allowed_user_comment_triggers_fix_on_pr(cfg):
     p = pr(5, "needs:human", "engine:codex")
     c = Comment(77, "qr", 5, "Maxiar", "@OpenHands usa otro color")
     [start] = starts(decide([p], [c], {}, State(), cfg, NOW))
-    assert start == StartTask(p, "fix", "codex", "comment", "@OpenHands usa otro color", 77)
+    assert start == StartTask(p, "fix", "codex", "comment", "@OpenHands usa otro color", 77, slot="codex")
 
 
 def test_comment_on_issue_triggers_dev(cfg):
@@ -198,8 +199,10 @@ def test_priority_is_comment_then_conflict_then_label(cfg):
     [start] = starts(decide(items, [], {}, State(), cfg, NOW))
     assert start.item.number == 11
     c = Comment(90, "qr", 2, "maxiar", "@openhands sigue")
-    [start] = starts(decide(items, [c], {}, State(), cfg, NOW))
-    assert start.item.number == 2
+    first, second = starts(decide(items, [c], {}, State(), cfg, NOW))
+    # El comentario va primero y toma Codex; el fix del conflicto no espera y usa el respaldo.
+    assert (first.item.number, first.engine) == (2, "codex")
+    assert (second.item.number, second.engine) == (11, "claude")
 
 
 def test_parse_dependencies_ignores_html_comments():
@@ -234,17 +237,58 @@ def test_conflict_instruction_forbids_dropping_main_features():
     assert "nunca descartes" in CONFLICT_INSTRUCTION.lower() and "needs:human" in CONFLICT_INSTRUCTION
 
 
-def test_issue_with_agent_docs_starts_docs_with_docs_engine(cfg):
+def test_issue_with_agent_docs_starts_docs_preferring_codex(cfg):
     [start] = starts(decide([issue(1, "agent:docs")], [], {}, State(), cfg, NOW))
-    assert (start.role, start.engine) == ("docs", "claude")
+    assert (start.role, start.engine) == ("docs", "codex")
 
 
-def test_qa_uses_configured_engine_not_pr_engine(cfg):
+def test_qa_falls_back_by_slots_not_pr_engine(cfg):
     [start] = starts(decide([pr(5, "agent:qa", "engine:codex")], [], {}, State(), cfg, NOW))
     assert (start.role, start.engine) == ("qa", "codex")
-    cfg2 = dataclasses.replace(cfg, qa_engine="claude")
+    cfg2 = dataclasses.replace(cfg, slots=(Slot("claude", "claude", "senior"),))
     [start] = starts(decide([pr(5, "agent:qa", "engine:codex")], [], {}, State(), cfg2, NOW))
     assert start.engine == "claude"
+
+
+THREE = (Slot("claude-senior", "claude", "senior"), Slot("codex-senior", "codex", "senior"), Slot("gemini", "gemini", "senior"))
+
+
+def test_qa_goes_to_gemini_slot(cfg):
+    cfg3 = dataclasses.replace(cfg, slots=THREE)
+    [start] = starts(decide([pr(5, "agent:qa", "engine:codex")], [], {}, State(), cfg3, NOW))
+    assert (start.engine, start.slot) == ("gemini", "gemini")
+
+
+def test_size_l_goes_to_claude(cfg):
+    cfg3 = dataclasses.replace(cfg, slots=THREE)
+    [start] = starts(decide([issue(1, "agent:dev", "size:L")], [], {}, State(), cfg3, NOW))
+    assert start.slot == "claude-senior"
+
+
+def test_finish_before_start_priority(cfg):
+    cfg1 = dataclasses.replace(cfg, slots=(Slot("codex-senior", "codex", "senior"),))
+    items = [issue(1, "agent:dev"), pr(9, "agent:fix", "engine:codex")]
+    [start] = starts(decide(items, [], {}, State(), cfg1, NOW))
+    assert (start.item.number, start.role) == (9, "fix")
+
+
+def test_exhausted_slot_is_not_used_and_review_falls_back(cfg):
+    cfg3 = dataclasses.replace(cfg, slots=THREE)
+    state = State(slot_exhausted_until={"claude-senior": NOW + 600})
+    [start] = starts(decide([pr(5, "agent:review", "engine:codex")], [], {}, state, cfg3, NOW))
+    assert start.slot == "gemini"
+
+
+def test_two_slots_of_different_engines_run_in_parallel(cfg):
+    cfg3 = dataclasses.replace(cfg, slots=THREE)
+    items = [issue(1, "agent:dev"), issue(2, "agent:dev", "size:L"), pr(5, "agent:qa", "engine:codex")]
+    result = {s.item.number: s.slot for s in starts(decide(items, [], {}, State(), cfg3, NOW))}
+    assert result == {1: "codex-senior", 2: "claude-senior", 5: "gemini"}
+
+
+def test_active_task_without_slot_occupies_its_engine(cfg):
+    state = state_with(active(7, engine="codex"))
+    assert starts(decide([issue(1, "agent:dev")], [], {"c1": ConvInfo("c1", "running")}, state, cfg, NOW)) == []
 
 
 def test_agent_dev_in_docs_only_repo_does_not_start_and_notifies_once(cfg):
@@ -258,7 +302,7 @@ def test_comment_in_docs_only_repo_triggers_docs(cfg):
     cfg2 = dataclasses.replace(cfg, docs_only_repos=("qr",))
     c = Comment(95, "qr", 1, "maxiar", "@openhands documentá esto")
     [start] = starts(decide([issue(1)], [c], {}, State(), cfg2, NOW))
-    assert (start.role, start.engine) == ("docs", "claude")
+    assert (start.role, start.engine) == ("docs", "codex")
 
 
 def test_docs_issue_waits_for_dependency(cfg):

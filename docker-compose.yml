@@ -37,10 +37,14 @@ services:
       REPOS: ${REPOS:?falta REPOS en .env}
       ALLOWED_USERS: ${ALLOWED_USERS:?falta ALLOWED_USERS en .env}
       BOT_LOGIN: ${BOT_LOGIN:-maxiar-ai-dev-team-bot}
-      DEFAULT_DEV_ENGINE: ${DEFAULT_DEV_ENGINE:-codex}
       PROJECT_NUMBER: ${PROJECT_NUMBER:-}
-      QA_ENGINE: ${QA_ENGINE:-codex}
-      DOCS_ENGINE: ${DOCS_ENGINE:-claude}
+      # Puestos del equipo (fase 5a): nombre:motor:nivel. Vacío = un puesto por motor (claude, codex).
+      SLOTS: ${SLOTS:-}
+      SLOT_COST_CLAUDE_SENIOR: ${SLOT_COST_CLAUDE_SENIOR:-}
+      SLOT_COST_CODEX_SENIOR: ${SLOT_COST_CODEX_SENIOR:-}
+      SLOT_COST_GEMINI: ${SLOT_COST_GEMINI:-}
+      LIMIT_TZ: ${LIMIT_TZ:-America/Argentina/Buenos_Aires}
+      GEMINI_IMAGE_USD: ${GEMINI_IMAGE_USD:-0.04}
       DOCS_ONLY_REPOS: ${DOCS_ONLY_REPOS:-}
       HEARTBEAT_PATH: /state/heartbeat
       CANVAS_URL: http://canvas:8000

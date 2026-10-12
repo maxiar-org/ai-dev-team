@@ -23,15 +23,20 @@ def item_key(repo: str, number: int) -> str:
     return f"{repo}#{number}"
 
 
-def other_engine(engine: str) -> str:
-    return "claude" if engine == "codex" else "codex"
+@dataclass(frozen=True)
+class Slot:
+    """Un puesto: una cuenta de un motor, con un nivel."""
+
+    name: str
+    engine: str
+    tier: str
 
 
-def engine_from_labels(labels: frozenset[str], default: str) -> str:
-    if "engine:claude" in labels:
-        return "claude"
-    if "engine:codex" in labels:
-        return "codex"
+def engine_from_labels(labels: frozenset[str], default: str | None) -> str | None:
+    # Orden fijo: si un PR quedó con dos engine:* (pasó en nikito#22), gana siempre el mismo.
+    for engine in ("claude", "codex", "gemini"):
+        if f"engine:{engine}" in labels:
+            return engine
     return default
 
 
@@ -87,6 +92,8 @@ class ActiveTask:
     conversation_id: str
     started_at: float
     workspace: str
+    slot: str = ""
+    comment_id: int | None = None
 
     @property
     def key(self) -> str:
@@ -102,6 +109,7 @@ class StartTask:
     trigger: Trigger
     instruction: str = ""
     comment_id: int | None = None
+    slot: str = ""
 
 
 @dataclass(frozen=True)

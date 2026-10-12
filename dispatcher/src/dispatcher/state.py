@@ -20,6 +20,7 @@ class State:
     blocked_notified: dict[str, list[int]] = field(default_factory=dict)
     qa_rounds: dict[str, int] = field(default_factory=dict)
     docs_only_notified: set[str] = field(default_factory=set)
+    slot_exhausted_until: dict[str, float] = field(default_factory=dict)
 
 
 class StateStore:
@@ -39,6 +40,7 @@ class StateStore:
             blocked_notified={k: list(v) for k, v in data.get("blocked_notified", {}).items()},
             qa_rounds=dict(data.get("qa_rounds", {})),
             docs_only_notified=set(data.get("docs_only_notified", [])),
+            slot_exhausted_until={k: float(v) for k, v in data.get("slot_exhausted_until", {}).items()},
         )
 
     def save(self, state: State) -> None:
@@ -52,6 +54,7 @@ class StateStore:
             "blocked_notified": state.blocked_notified,
             "qa_rounds": state.qa_rounds,
             "docs_only_notified": sorted(state.docs_only_notified),
+            "slot_exhausted_until": state.slot_exhausted_until,
         }
         tmp = self.path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
