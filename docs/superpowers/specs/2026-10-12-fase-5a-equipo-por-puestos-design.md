@@ -106,7 +106,7 @@ Cuando una conversación termina con error, el dispatcher busca en la última re
 - `RESOURCE_EXHAUSTED` y `429` (Gemini).
 
 Una función pura toma el texto y devuelve "es un límite" y "hasta cuándo".
-- **Hora sin zona:** se interpreta en la zona del contenedor del dispatcher, configurable con `LIMIT_TZ` (por defecto `America/Argentina/Buenos_Aires`).
+- **Hora sin zona:** se interpreta en `LIMIT_TZ`, por defecto `UTC`: Codex escribe la hora en la zona del contenedor de Canvas, que corre en UTC. Verificado el 12 de octubre: un límite a las 18:37 UTC decía "try again at 10:38 PM", 4 h después y dentro de la ventana de 5 h.
 - **Sin hora:** se usa 1 hora.
 - **Margen:** a la hora del reinicio se le suman 5 minutos.
 

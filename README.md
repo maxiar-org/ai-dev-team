@@ -32,7 +32,7 @@ El dispatcher trabaja por **puestos**. Un puesto es una cuenta de un motor y cor
 ```
 SLOTS=claude-senior:claude:senior,codex-senior:codex:senior,gemini:gemini:senior   # nombre:motor:nivel
 SLOT_COST_CLAUDE_SENIOR=100      # costo fijo mensual en USD, para el presupuesto
-LIMIT_TZ=America/Argentina/Buenos_Aires
+LIMIT_TZ=UTC                     # zona en la que Codex escribe "try again at …": la del contenedor de Canvas
 GEMINI_IMAGE_USD=0.04
 ```
 Sin `SLOTS` hay un puesto por motor (`claude` y `codex`). Para sumar un puesto, agregalo a `SLOTS` y su `SLOT_COST_<PUESTO>` al servicio `dispatcher` del compose. Dos puestos del mismo motor todavía no se admiten: necesitan credenciales separadas (fase 5a, sección 2.1 del spec).

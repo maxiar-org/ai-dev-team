@@ -75,7 +75,7 @@ class Config:
     heartbeat_path: Path | None = None
     slots: tuple[Slot, ...] = DEFAULT_SLOTS
     slot_costs: dict[str, float] = field(default_factory=dict)
-    limit_tz: str = "America/Argentina/Buenos_Aires"
+    limit_tz: str = "UTC"
     gemini_image_usd: float = 0.04
     limits_path: Path | None = None
 
@@ -149,7 +149,7 @@ class Config:
             docs_only_repos=tuple(r.strip() for r in env.get("DOCS_ONLY_REPOS", "").split(",") if r.strip()),
             slots=slots,
             slot_costs=costs,
-            limit_tz=env.get("LIMIT_TZ", "").strip() or "America/Argentina/Buenos_Aires",
+            limit_tz=env.get("LIMIT_TZ", "").strip() or "UTC",  # Codex escribe la hora del reinicio en la zona del contenedor de Canvas
             gemini_image_usd=float(env.get("GEMINI_IMAGE_USD", "").strip() or 0.04),
             limits_path=Path(env.get("LIMITS_PATH", "").strip() or "/pilot/limits.csv"),
         )
