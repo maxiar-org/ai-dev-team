@@ -25,7 +25,8 @@ RUN git clone --depth 1 --branch "${FLUTTER_CHANNEL}" https://github.com/flutter
 
 COPY --chmod=755 init-credentials.sh /usr/local/bin/init-credentials.sh
 COPY --chmod=755 mcp-image-gemini /usr/local/bin/mcp-image-gemini
-RUN mkdir -p /home/openhands/.codex && chown openhands:openhands /home/openhands/.codex
+RUN mkdir -p /home/openhands/.codex /home/openhands/.gemini \
+ && chown openhands:openhands /home/openhands/.codex /home/openhands/.gemini
 
 USER openhands
 ENV PATH="/opt/flutter/bin:${PATH}"
