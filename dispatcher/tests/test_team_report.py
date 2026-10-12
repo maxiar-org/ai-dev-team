@@ -120,3 +120,11 @@ def test_project_costs_split_fixed_by_minutes_and_keep_unassigned():
 
 def test_rework_per_issue_is_public():
     assert rework_per_issue([m("codex-senior", r, 1, NOW, 5) for r in ("dev", "fix", "qa")]) == 2.0
+
+
+def test_clean_metrics_drops_rows_with_garbled_fin_or_images():
+    good = mf("codex-senior", NOW - HOUR, NOW - 1800)
+    cut_fin = {**good, "fin": "2026-10-12T0"}
+    shifted = {**good, "imagenes_gemini": "2026-10-12T05:00:00+00:00"}
+    no_fin = {**good, "fin": ""}
+    assert clean_metrics([good, cut_fin, shifted, no_fin]) == [good, no_fin]

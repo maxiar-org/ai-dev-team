@@ -139,8 +139,8 @@ def test_slot_cards_working_free_and_out_of_quota():
     assert cards["claude-senior"]["status"] == "trabajando" and "review de qr #6 · hace 2 min" == cards["claude-senior"]["detail"]
     assert cards["codex-senior"]["status"] == "libre" and cards["codex-senior"]["label"] == "Codex Pro · dev S/M"
     assert cards["codex-senior"]["detail"].startswith("Terminó dev de qr #1 a las ")
-    hhmm = datetime.fromtimestamp(NOW + 3 * 3600, tz=timezone.utc).strftime("%H:%M")
-    assert cards["gemini"]["status"] == "sin_cupo" and cards["gemini"]["status_text"] == f"Sin cupo hasta {hhmm}"
+    until = datetime.fromtimestamp(NOW + 3 * 3600, tz=timezone.utc)  # NOW es 22:53 UTC: el reinicio cae al día siguiente
+    assert cards["gemini"]["status"] == "sin_cupo" and cards["gemini"]["status_text"] == f"Sin cupo hasta vie {until.day} {until:%H:%M}"
     assert cards["codex-senior"]["tasks"] == 1 and cards["codex-senior"]["hours"] == 0.5
     assert len(cards["codex-senior"]["cells"]) == 24 and cards["codex-senior"]["cells"][22]["state"] == "trabajando"
     assert "3 imágenes" in cards["gemini"]["footer"] and "USD 0,12" in cards["gemini"]["footer"]
@@ -222,3 +222,19 @@ def test_waiting_and_human_carry_age():
     v = build_view(Snapshot(now=NOW, prs=[p], issues=[h]))
     assert v.waiting[0]["age"] == 3 * 3600 and v.human[0]["age"] == 3600 and v.human[0]["kind"] == "issue"
     assert build_view(Snapshot(now=NOW, prs=[pr(11)])).waiting[0]["age"] is None
+
+
+def test_exhaustion_on_another_day_shows_the_day():
+    from dispatcher.view import zone
+    later = NOW + 3 * 86400
+    card = {c["name"]: c for c in build_view(Snapshot(now=NOW, slots=SLOTS3, tz="UTC", exhausted={"gemini": later})).slots}["gemini"]
+    d = datetime.fromtimestamp(later, tz=zone("UTC"))
+    assert card["status_text"] == f"Sin cupo hasta {('lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom')[d.weekday()]} {d.day} {d:%H:%M}"
+
+
+def test_page_survives_garbled_metric_rows():
+    good = row("codex-senior", 2, 30)
+    rows = [good, {**good, "fin": "2026-10-1"}, {**good, "imagenes_gemini": "x"}]
+    merged = [{"repo": "qr", "number": 9, "closes": 1, "created_at": ts(3), "merged_at": ts(1)}]
+    v = build_view(Snapshot(now=NOW, slots=SLOTS3, metrics=rows, merged=merged))
+    assert v.budget["7"]["images"] == 0 and len(v.slots) == 3

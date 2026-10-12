@@ -95,6 +95,9 @@ def clean_metrics(rows: Iterable[Mapping[str, str]]) -> list[Mapping[str, str]]:
         try:
             _ts(r["inicio"])
             float(r.get("duracion_min") or 0)
+            int(r.get("imagenes_gemini") or 0)
+            if r.get("fin"):
+                _ts(r["fin"])
             r["repo"], r["numero"], r["rol"]
         except (KeyError, TypeError, ValueError):
             continue

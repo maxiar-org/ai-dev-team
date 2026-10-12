@@ -210,6 +210,17 @@ def _hhmm(ts: float, tz: ZoneInfo) -> str:
     return datetime.fromtimestamp(ts, tz).strftime("%H:%M")
 
 
+WEEKDAYS = ("lun", "mar", "mié", "jue", "vie", "sáb", "dom")
+
+
+def _until_text(until: float, now: float, tz: ZoneInfo) -> str:
+    """HH:MM si es hoy; con el día adelante si no (un límite semanal puede durar días)."""
+    when = datetime.fromtimestamp(until, tz)
+    if when.date() == datetime.fromtimestamp(now, tz).date():
+        return when.strftime("%H:%M")
+    return f"{WEEKDAYS[when.weekday()]} {when.day} {when:%H:%M}"
+
+
 def _column(stage: str) -> str:
     if stage in ("necesita a Eduardo", "espera a Eduardo"):
         return "Te espera"
@@ -233,7 +244,7 @@ def _slot_cards(snap: Snapshot, rows: list, limits: list) -> list[dict]:
             role = ROLE_NAMES.get(t.get("role"), t.get("role"))
             detail = f"{role} de {key.replace('#', ' #')} · hace {int((now - active_since) // 60)} min"
         else:
-            status, status_text = ("sin_cupo", f"Sin cupo hasta {_hhmm(until, tz)}") if until > now else ("libre", "Libre")
+            status, status_text = ("sin_cupo", f"Sin cupo hasta {_until_text(until, now, tz)}") if until > now else ("libre", "Libre")
             done = [r for r in rows if r.get("puesto") == s.name]
             if done:
                 last = max(done, key=lambda r: r["inicio"])
