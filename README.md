@@ -32,7 +32,7 @@ El dispatcher trabaja por **puestos**. Un puesto es una cuenta de un motor y cor
 ```
 SLOTS=claude-senior:claude:senior,codex-senior:codex:senior,gemini:gemini:senior   # nombre:motor:nivel
 SLOT_COST_CLAUDE_SENIOR=100      # costo fijo mensual en USD, para el presupuesto
-SLOT_LABEL_CLAUDE_SENIOR="Claude Max 5x · arquitectura"   # opcional, para la pantalla de estado
+SLOT_LABEL_CLAUDE_SENIOR="*El Claudio*: Claude Max 5x · arquitectura"   # opcional, pantalla de estado; *texto* en negrita
 LIMIT_TZ=UTC                     # zona en la que Codex escribe "try again at …": la del contenedor de Canvas
 GEMINI_IMAGE_USD=0.04
 ```

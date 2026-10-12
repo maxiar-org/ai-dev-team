@@ -93,3 +93,11 @@ def test_app_status_traduce_estado_de_coolify():
     assert _app_status("running:unknown") == ("ok", "Corriendo (sin healthcheck)")
     assert _app_status("running:healthy") == ("ok", "Corriendo (sana)")
     assert _app_status("running:unhealthy") == ("bad", "Corriendo (con fallas)")
+
+
+def test_slot_label_asterisks_become_bold_and_stay_escaped():
+    from dispatcher.render import _label
+    assert _label("*El Claudio*: Claude Max 5x · arquitectura") == "<strong>El Claudio</strong>: Claude Max 5x · arquitectura"
+    assert _label("*<b>x</b>* sin cerrar *") == "<strong>&lt;b&gt;x&lt;/b&gt;</strong> sin cerrar *"
+    snap = Snapshot(now=NOW, slots=SLOTS3, slot_labels={"gemini": "*La Jeni*: Gemini Pro"})
+    assert "<strong>La Jeni</strong>: Gemini Pro" in render(build_view(snap))

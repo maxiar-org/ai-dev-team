@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from html import escape
 
 from .charts import day_label, fmt_hours, hbars, stacked_bars, strip_html
@@ -116,6 +117,7 @@ a.pill{text-decoration:none}a.pill:hover{border-color:var(--ink2)}
 .links{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;margin-top:4px}.links a{display:inline-flex;align-items:center;gap:4px}
 html{scroll-behavior:smooth}#resumen{scroll-margin-top:16px}
 footer{font-size:12px;color:var(--muted)}
+.slot-name .muted strong{color:var(--ink);font-weight:600}
 """
 
 _APP_STATES = {"running": "Corriendo", "exited": "Detenida", "restarting": "Reiniciando", "starting": "Arrancando",
@@ -140,6 +142,14 @@ def _a(url: str | None, text: str, cls: str = "") -> str:
 
 def _err(view: View, *sections: str) -> str:
     return "".join(f'<p class="bad">sin datos ({escape(view.errors[s])})</p>' for s in sections if s in view.errors)
+
+
+BOLD = re.compile(r"\*([^*]+)\*")
+
+
+def _label(text: str) -> str:
+    """Línea bajo el nombre del puesto: *texto* en negrita (SLOT_LABEL_*, p. ej. "*El Claudio*: Claude Max 5x")."""
+    return BOLD.sub(r"<strong>\1</strong>", escape(text))
 
 
 def _age(seconds: float | None) -> str:
@@ -222,7 +232,7 @@ def _team(view: View) -> str:
         cards.append(
             f'<article class="card"><div class="slot-head"><div class="slot-name">'
             f'<span class="slot-bar" style="background:var(--c-{s["engine"]})"></span><div><div class="mono">{escape(s["name"])}</div>'
-            f'<div class="muted">{escape(s["label"])}</div></div></div><span class="status">{badge}{escape(s["status_text"])}</span></div>'
+            f'<div class="muted">{_label(s["label"])}</div></div></div><span class="status">{badge}{escape(s["status_text"])}</span></div>'
             f'<div class="ink2" style="font-size:13px">{escape(s["detail"])}</div>'
             f'<div>{strip_html(s["cells"], s["engine"], aria)}<div class="strip-axis"><span>hace 24 h</span><span>ahora</span></div></div>'
             f'<div class="nums"><div class="num"><b>{s["tasks"]}</b><span>tareas en 24 h</span></div>'
