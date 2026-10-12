@@ -24,6 +24,8 @@ services:
     volumes:
       - canvas-state:/home/openhands/.openhands
       - codex-home:/home/openhands/.codex
+      # Login de Gemini CLI (tercer motor, fase 5a): persiste entre reconstrucciones de Canvas.
+      - gemini-home:/home/openhands/.gemini
       - projects:/projects
 
   dispatcher:
@@ -156,6 +158,7 @@ services:
 volumes:
   canvas-state:
   codex-home:
+  gemini-home:
   projects:
   dispatcher-state:
   operador-home:
