@@ -31,7 +31,7 @@ CSS = """
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Geist,system-ui,sans-serif;padding:28px 16px 40px}
 .wrap{max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:24px}
-a{color:inherit}.mono{font-family:"Geist Mono",ui-monospace,monospace}.muted{color:var(--muted);font-size:13px}.ink2{color:var(--ink2)}
+a{color:inherit}.mono{font-family:"Geist Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace}.muted{color:var(--muted);font-size:13px}.ink2{color:var(--ink2)}
 .bad{color:#d03b3b}.warn{color:var(--ink2)}
 header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}
 .eyebrow{font-size:13px;color:var(--muted)}

@@ -32,6 +32,7 @@ El dispatcher trabaja por **puestos**. Un puesto es una cuenta de un motor y cor
 ```
 SLOTS=claude-senior:claude:senior,codex-senior:codex:senior,gemini:gemini:senior   # nombre:motor:nivel
 SLOT_COST_CLAUDE_SENIOR=100      # costo fijo mensual en USD, para el presupuesto
+SLOT_LABEL_CLAUDE_SENIOR="Claude Max 5x · arquitectura"   # opcional, para la pantalla de estado
 LIMIT_TZ=UTC                     # zona en la que Codex escribe "try again at …": la del contenedor de Canvas
 GEMINI_IMAGE_USD=0.04
 ```
@@ -110,7 +111,15 @@ docker compose logs -f dispatcher
 Todo corre en Docker Compose en la mini-PC. En el host solo está Docker.
 
 - **Entrar:** `ssh ubuntu-labs`, después `sudo -iu aidev`, y `cd /opt/ai-dev-team`.
-- **Estado de todo:** https://estado.maxiar.dev (Access). Arriba, qué espera de vos y en qué orden mergear; abajo, el trabajo en curso, los despliegues y previews, la salud y el consumo. Se actualiza cada minuto, sin LLM (servicio `estado`). El botón **"Pedir resumen"** le pide al operador (con `claude -p` y tu cuenta personal) qué pasó desde el resumen anterior y qué hacer y por qué; tarda de 1 a 3 minutos y los resúmenes quedan en `~/resumenes` del volumen `operador-home`.
+- **Estado de todo:** https://estado.maxiar.dev (Access). Arriba, qué espera de vos y en qué orden mergear; después el equipo por puesto, los proyectos por etapa, los despliegues y credenciales, y el consumo y presupuesto. Se actualiza cada minuto, sin LLM (servicio `estado`). El botón **"Pedir resumen"** le pide al operador (con `claude -p` y tu cuenta personal) qué pasó desde el resumen anterior y qué hacer y por qué; tarda de 1 a 3 minutos y los resúmenes quedan en `~/resumenes` del volumen `operador-home`.
+
+  **Pantalla (fase 5b):** te esperan, equipo por puesto (estado, franja de 24 h, consumo), proyectos por etapa con la épica en curso y enlaces al repo, sus vistas de GitHub Projects y sus sitios, despliegues y credenciales, consumo y presupuesto (`?rango=7` o `?rango=30`, también por proyecto) y el resumen del operador. `GET /api/estado` devuelve los mismos datos en JSON (detrás de Access).
+
+  Variables del servicio `estado`, además de las de siempre: `SLOTS`, `SLOT_COST_<PUESTO>`, `SLOT_LABEL_<PUESTO>` (la línea de plan bajo el nombre del puesto), `GEMINI_IMAGE_USD`, `LIMITS_PATH`, `ESTADO_TZ` (zona de las horas que se muestran, por defecto `America/Argentina/Buenos_Aires`) y `HEALTH_LINKS` (`canvas=https://…,coolify=https://…`: a dónde llevan las píldoras de salud).
+
+  Costo por proyecto: el fijo de cada puesto se reparte según los minutos que trabajó en cada proyecto en el rango, más las imágenes de sus tareas; el fijo de un puesto sin trabajo queda en "sin asignar".
+
+  Para revisar el diseño sin la mini-PC: `cd dispatcher && uv run python ../scripts/estado-demo.py /tmp/estado` y abrir los HTML.
 - **Ver a los agentes:** https://canvas.maxiar.dev (login de Cloudflare Access con tu email).
 - **Hablar con el operador:** en la app de Claude o en claude.ai/code, abre la sesión de Remote Control **"operador"**. Es Claude Code corriendo en la mini-PC, con el conocimiento de `CLAUDE.md` y los skills `/estado` y `/desplegar`.
 - **Primer login del operador:** `docker compose exec -it operador claude` (login por código con tu cuenta personal) y después `docker compose restart operador`. Para `gh`: `docker compose exec -it operador gh auth login` y luego `docker compose exec -it operador gh auth refresh -s read:project` (para leer el tablero).
