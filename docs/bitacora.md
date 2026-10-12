@@ -199,7 +199,17 @@ Solución temporal para el piloto: `cloudflared tunnel --url` desde la Mac, que 
   - **Lección 2, el volumen (PR #25):** `~/.gemini` vive en el volumen `gemini-home`.
   - **Para volver a iniciar sesión:** `docker compose exec -it -e NO_BROWSER=true canvas gemini` → "Login with Google". Si quedó un `gemini-credentials.json` ilegible (de otro hostname), hay que borrarlo antes, porque el login nuevo no lo reemplaza.
 - **Credenciales:** al `.env` de la mini-PC se pasaron solo las dos credenciales nuevas, con un backup antes. El `.env` local de la Mac tenía `REPOS` desactualizado.
-- **Pendiente de la tarea 10:**
-  - prueba en vivo de agotamiento simulado y un issue `size:S` de punta a punta;
-  - verificar en qué zona horaria informa Codex su reinicio.
+- **Pruebas en vivo (tarea 10), aprobadas:**
+  - **De punta a punta:** agent-playground #5 (`size:S`): dev en codex (1,3 min), review en claude (1,3 min), QA en gemini (4,9 min). Cada fila de `metrics.csv` quedó con su puesto.
+  - **Respaldo:** con `codex-senior` marcado sin cupo, el dev de agent-playground #7 lo tomó gemini (PR #8 en 2,5 min) y lo revisó claude.
+  - **Zona horaria de Codex:** escribe "try again at …" en la zona del contenedor de Canvas, que es UTC. Un corte a las 18:37 UTC decía "10:38 PM", 4 h después. `LIMIT_TZ` pasó a `UTC` (PR #28 y `.env`); con Buenos Aires bloqueaba el puesto unas 3 h de más.
 - **Menores diferidos de la review final:** ver el ledger del PR #24.
+
+## Fase 5b: pantalla de estado nueva (2026-10-12)
+
+- **Desplegada** (PR #29): `estado.maxiar.dev` pasa a ser el tablero diseñado en Claude Design (canvas "Estado AI Dev Team"): te esperan, equipo por puesto con franja de 24 h, proyectos por etapa con épica y enlaces (repo, vistas de GitHub Projects, sitios), despliegues y credenciales, consumo y presupuesto en 7 o 30 días (también por proyecto) y el resumen.
+- **Sin framework de frontend:** HTML y CSS renderizados en el servidor. El diseño se revisó con capturas de Playwright en claro, oscuro y 390 px contra el canvas (`scripts/estado-demo.py` lo genera con datos de ejemplo).
+- **Variables nuevas en el `.env` de la mini-PC:** `HEALTH_LINKS` (Canvas y Coolify) y `SLOT_LABEL_*` con los apodos del equipo: **El Claudio** (claude-senior), **El Code** (codex-senior) y **La Jeni** (gemini). `*texto*` sale en negrita.
+- **A tener en cuenta los primeros días:** las filas de `metrics.csv` anteriores a la fase 5a no tienen puesto, así que los gráficos y el costo por proyecto se van llenando desde el 12 de octubre. Mientras tanto, todo el fijo se reparte entre los pocos proyectos con tareas registradas.
+- **Regla ruidosa de la fase 5a:** "menos de 20 % de uso → bajar de nivel" se dispara siempre, porque el uso se mide sobre 24 h. Revisarla con dos semanas de datos reales.
+- **Menores diferidos de la review final:** vencimientos contados en UTC, conteo de imágenes de puestos ya no configurados, URL de Coolify sin chequeo de esquema, una carrera rara en `/api/estado` mientras se genera un resumen, errores de GraphQL silenciosos, y el gráfico diario por día local contra la ventana móvil de las cifras.
