@@ -38,6 +38,8 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}**
 
    Si ya hay un PR abierto para esta rama, no abras otro: sube los commits y comenta en el PR qué cambió.
 
+   **El CI del PR tiene que quedar en verde antes de terminar:** `gh run list --repo {{org}}/{{repo}} --branch {{branch}} --limit 3` para ubicar la corrida del último commit, `gh run watch <id> --repo {{org}}/{{repo}} --exit-status` para esperarla y `gh run view <id> --repo {{org}}/{{repo}} --log-failed` si falla. (`gh pr checks` no funciona con el token del equipo: no tiene permiso de *Checks*.) Si falla, corregilo y volvé a subir. Si falla por algo ajeno a tu cambio (por ejemplo, otra versión de la herramienta en el CI), explicalo en el PR con la evidencia.
+
    **PR en borrador:** si necesitás frenar para preguntarle algo a Eduardo y querés dejar el trabajo parcial a la vista, abrí el PR como borrador (`gh pr create --draft …`). Mientras sea borrador no pasa a review ni a QA. Cuando termines el issue completo, marcalo listo con `gh pr ready <número del PR> --repo {{org}}/{{repo}}`: sin eso no se revisa.
 
 ## Si te falta información
