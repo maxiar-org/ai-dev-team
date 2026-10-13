@@ -223,3 +223,10 @@ def test_repeated_limits_escalate_after_three_in_a_row():
     out = outcome_for(task(), "error", LIMIT_MSG, frozenset(), None, 0, 2, now=1_000.0, tz="UTC", limit_streak=2)
     assert out.result == "limite_repetido" and out.limited_until is not None
     assert AddLabels(3, ("needs:human",)) in out.ops
+
+
+def test_review_approval_resets_review_rounds():
+    # Un PR aprobado que después vuelve a review (por ejemplo, tras resolver un conflicto) arranca
+    # con rondas nuevas: no hereda las que gastó antes de la aprobación.
+    out = outcome_for(task("review", "pr", 7), "finished", "Todo bien.\nVEREDICTO: APROBADO", frozenset(), None, 2, 2)
+    assert (out.result, out.review_rounds) == ("aprobado", 0)
