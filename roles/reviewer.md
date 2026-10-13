@@ -10,7 +10,7 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}** (rama `{{bra
 
 1. Estás en una copia del repo con la rama del PR. Lee `AGENTS.md` si existe.
 2. Lee el issue vinculado, el PR y el diff: `gh pr view {{number}} --repo {{org}}/{{repo}} --comments` y `gh pr diff {{number}} --repo {{org}}/{{repo}}`.
-3. Corre las verificaciones de `AGENTS.md` (en Flutter: `flutter analyze` y `flutter test`) y revisa el CI con `gh pr checks {{number}} --repo {{org}}/{{repo}}`.
+3. Corre las verificaciones de `AGENTS.md` (en Flutter: `flutter analyze` y `flutter test`) y revisa el CI: `gh run list --repo {{org}}/{{repo}} --branch {{branch}} --limit 3` para ubicar la corrida del último commit, `gh run watch <id> --repo {{org}}/{{repo}} --exit-status` para esperarla y `gh run view <id> --repo {{org}}/{{repo}} --log-failed` si falla. (`gh pr checks` no funciona con el token del equipo: no tiene permiso de *Checks*.) Un CI en rojo sin explicación en el PR es un problema **bloqueante**.
 4. Revisa estos puntos:
    - que se cumplan los criterios de aceptación del issue;
    - bugs y casos borde;

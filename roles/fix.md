@@ -13,8 +13,10 @@ Repositorio `{{org}}/{{repo}}`, {{kind}} #{{number}}: **{{title}}** (rama `{{bra
 1. Estás en una copia del repo con la rama `{{branch}}`. Lee `AGENTS.md` si existe.
 2. Lee todos los comentarios del PR: `gh pr view {{number}} --repo {{org}}/{{repo}} --comments`. Lo que hay que corregir está en el último comentario con `VEREDICTO: CAMBIOS` (reviewer) o con `QA: FALLA` (QA, con pasos y capturas), o en el pedido de arriba.
 3. Corrige con TDD: primero un test que reproduzca el problema, después la corrección. Atiende todos los puntos **bloqueantes**; las sugerencias, solo si son baratas. Nunca descartes funcionalidad que ya existe en `main` para resolver algo.
+   **Corregí la causa, no solo el caso reportado.** Si la review muestra un ejemplo de un problema más general (por ejemplo, un desborde en un tamaño de pantalla con cierto contenido), buscá la causa y probá el peor caso de toda la clase, no solo el escenario que te pasaron. Si no, la próxima review encuentra otro escenario del mismo problema.
    En proyectos Dart o Flutter, usá el MCP `dart` como en el rol de dev: primero registrás la carpeta del proyecto con `roots`, y después lo usás para el análisis, los errores en tiempo de ejecución y el árbol de widgets.
 4. Corre las verificaciones de `AGENTS.md` (en Flutter: `flutter analyze` y `flutter test`), haz commit y `git push origin {{branch}}`.
+   Después esperá el CI de ese push y dejalo en verde: `gh run list --repo {{org}}/{{repo}} --branch {{branch}} --limit 3` para ubicar la corrida del último commit, `gh run watch <id> --repo {{org}}/{{repo}} --exit-status` para esperarla y `gh run view <id> --repo {{org}}/{{repo}} --log-failed` si falla. (`gh pr checks` no funciona con el token del equipo: no tiene permiso de *Checks*.)
 5. Comenta en el PR qué corregiste, punto por punto: `gh pr comment {{number}} --repo {{org}}/{{repo}} --body-file <archivo>`.
 
 ## Si no estás de acuerdo o te falta información
