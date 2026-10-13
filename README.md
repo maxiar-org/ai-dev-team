@@ -15,7 +15,7 @@ toma issues etiquetados, abre PRs, los revisa con otro modelo y te pide la aprob
 | — | Si hay `VEREDICTO: CAMBIOS`, el dev corrige (máximo 2 rondas) |
 | — | Si hay `VEREDICTO: APROBADO`, el PR pasa a **QA** (Gemini; si no hay, Codex), que prueba la app con Playwright: `QA: OK` → te llega un pedido de review; `QA: FALLA` → vuelve al dev |
 | Pones `agent:docs` en un issue | El agente de docs (Codex por defecto) actualiza el sitio Starlight del repo y abre un PR |
-| Comentas `@openhands ...` en un issue o PR (comentario normal o review del PR; no en comentarios sobre líneas de código) | El dev retoma la tarea con tu instrucción |
+| Comentas `@openhands ...` en un issue o PR (comentario normal o review del PR; no en comentarios sobre líneas de código) | El dev retoma la tarea con tu instrucción; en un PR, el cambio vuelve a pasar por review y QA antes de llegarte |
 | — | Si un PR queda con conflictos con `main` (por ejemplo, después de mergear otro), el dev los resuelve solo (máximo 2 intentos) y el PR vuelve a review y QA |
 | Escribes `Depende de #N` en un issue | El dispatcher no lo arranca hasta que el #N se cierre, y lo avisa con un comentario |
 | Ves `needs:human` | Un agente necesita una decisión tuya: respóndele con `@openhands ...` |

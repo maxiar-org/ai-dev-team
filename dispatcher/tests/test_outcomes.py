@@ -95,9 +95,11 @@ def test_fix_from_label_goes_back_to_review():
     assert (out.result, out.ops[-1]) == ("fix_aplicado", AddLabels(7, ("agent:review",)))
 
 
-def test_fix_from_comment_asks_eduardo_again():
+def test_fix_from_comment_goes_back_to_agent_review():
+    # Lo que pide Eduardo por comentario también pasa por review y QA antes de volver a él.
     out = outcome_for(task("fix", "pr", 7, trigger="comment"), "finished", "", frozenset(), None, 1, 2)
-    assert out.ops[-1] == RequestReview(7)
+    assert (out.result, out.ops[-1]) == ("fix_aplicado", AddLabels(7, ("agent:review",)))
+    assert RequestReview(7) not in out.ops
 
 
 def test_fix_that_asked_for_help_stops():

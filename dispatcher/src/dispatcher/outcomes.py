@@ -195,7 +195,8 @@ def outcome_for(
     # role == "fix"
     if LABEL_HUMAN in current_labels:
         return done("needs_human")
-    # Tras una corrección por label o por conflicto vuelve a revisar el agente: una resolución de
-    # conflictos puede descartar funcionalidad sin que el CI lo note. Si lo pidió Eduardo, le vuelve a él.
-    ops.append(RequestReview(n) if task.trigger == "comment" else AddLabels(n, (LABEL_REVIEW,)))
+    # Toda corrección vuelve a revisar el agente, también la que pidió Eduardo por comentario: una
+    # resolución de conflictos o un arreglo puede romper otra cosa sin que el CI lo note, y a Eduardo
+    # le llega recién después de review y QA.
+    ops.append(AddLabels(n, (LABEL_REVIEW,)))
     return done("fix_aplicado")
