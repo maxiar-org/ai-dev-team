@@ -12,7 +12,7 @@ toma issues etiquetados, abre PRs, los revisa con otro modelo y te pide la aprob
 |---|---|
 | Pones `agent:dev` en un issue | El dev implementa con TDD y abre un PR. Qué puesto lo toma depende de `size:*`, `kind:architecture` y `needs:images` (ver [Puestos del equipo](#puestos-del-equipo)); `engine:*` lo fuerza |
 | — | El dispatcher le pone `agent:review` al PR y lo revisa otro motor: Claude revisa a Codex y a Gemini, Codex revisa a Claude |
-| — | Si hay `VEREDICTO: CAMBIOS`, el dev corrige (máximo 2 rondas) |
+| — | Si hay `VEREDICTO: CAMBIOS`, el dev corrige (máximo 2 rondas; se reinician cuando la review aprueba, así un PR que vuelve a review tras un conflicto tiene rondas nuevas) |
 | — | Si hay `VEREDICTO: APROBADO`, el PR pasa a **QA** (Gemini; si no hay, Codex), que prueba la app con Playwright: `QA: OK` → te llega un pedido de review; `QA: FALLA` → vuelve al dev |
 | Pones `agent:docs` en un issue | El agente de docs (Codex por defecto) actualiza el sitio Starlight del repo y abre un PR |
 | Comentas `@openhands ...` en un issue o PR (comentario normal o review del PR; no en comentarios sobre líneas de código) | El dev retoma la tarea con tu instrucción; en un PR, el cambio vuelve a pasar por review y QA antes de llegarte |

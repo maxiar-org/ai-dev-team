@@ -151,7 +151,9 @@ def outcome_for(
         verdict = parse_verdict(final_response)
         if verdict == "APROBADO":
             ops.append(AddLabels(n, (LABEL_QA,)))
-            return done("aprobado")
+            # Las rondas se cuentan hasta la aprobación: si el PR vuelve a review (un conflicto,
+            # un pedido de Eduardo), arranca con rondas nuevas.
+            return done("aprobado", review=0)
         if verdict == "CAMBIOS":
             new_rounds = rounds + 1
             if new_rounds <= max_rounds:
